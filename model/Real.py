@@ -301,7 +301,7 @@ class Nut:
         svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
 
         self.net = NutNet(user_df['uid'].nunique(), usr_attr, srv_attr, svc_attr,
-                          k, 1, 8, 4, 128, 3, 3, 6)
+                          k, 1, 4, 4, 64, 3, 3, 6)
         # self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
         self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
 
