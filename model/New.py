@@ -14,7 +14,7 @@ from torch_geometric_temporal import STConv
 from tqdm import tqdm
 
 from model.QoSModel import QoSModel
-from model.layers import FourierTemporalAttention, CoEncoderLayer, AutoEmbedding
+from model.layers import FourierTemporalAttention, AutoEmbedding
 from utils import convert_percentage_to_decimal, get_path
 
 device0 = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -97,7 +97,7 @@ class MyDataset(Dataset):
         inv_df.sort_values(by=['timestamp', 'uid', 'eid', 'sid'], inplace=True)
 
         timestamps = sorted(user_df['timestamp'].unique())
-        ids = sorted(user_df['id'].unique())
+        ids = sorted(user_df['画id'].unique())
 
         timestamp_values = inv_df['timestamp'].values.astype(np.int32)
         indices = inv_df[['timestamp', 'uid', 'eid', 'sid']].values.astype(np.int32)
@@ -356,12 +356,12 @@ class Nut:
         super(Nut, self).__init__()
         self.dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, 5, 1)
 
-        usr_attr = torch.arange(user_df['id'].nunique()).view(-1, 1)
+        usr_attr = torch.arange(user_df['画id'].nunique()).view(-1, 1)
         svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
         srv_attr = torch.from_numpy(server_df[['eid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
 
         self.net = [
-            NutNet(user_df['id'].nunique(), usr_attr, srv_attr, svc_attr,
+            NutNet(user_df['画id'].nunique(), usr_attr, srv_attr, svc_attr,
                    k, 1, 16, 4, 256, 3, 3, 5),
             DownTask(8, 64, 1)
         ]
@@ -387,22 +387,22 @@ class Nut:
         return train_loader, valid_loader, test_loader
 
 if __name__ == '__main__':
-    user_df = pd.read_csv(get_path('users.csv'))
-    load_df = pd.read_csv(get_path('loads.csv'))
-    server_df = pd.read_csv(get_path('servers.csv'))
-    service_df = pd.read_csv(get_path('services.csv'))
+    user_df = pd.read_csv(get_path('user.csv'))
+    load_df = pd.read_csv(get_path('load.csv'))
+    server_df = pd.read_csv(get_path('server.csv'))
+    service_df = pd.read_csv(get_path('service.csv'))
     inv_df = pd.read_csv(get_path('invocation.csv'))
 
     dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, 5, 1)
     train_loader, valid_loader, test_loader = get_dataloaders(dataset, 0.2, 0.8)
 
-    usr_attr = torch.arange(user_df['id'].nunique()).view(-1, 1)
+    usr_attr = torch.arange(user_df['画id'].nunique()).view(-1, 1)
     svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
     srv_attr = torch.from_numpy(server_df[['eid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
 
     edge_index = torch.LongTensor(generate_graph(server_df, 3, 600)).to(device0)
 
-    model = NutNet(user_df['id'].nunique(), usr_attr, srv_attr, svc_attr,
+    model = NutNet(user_df['画id'].nunique(), usr_attr, srv_attr, svc_attr,
                    5, 1, 8, 4, 64, 3, 3, 5)
     down_model = DownTask(8, 64, 1)
     criterion = nn.L1Loss()

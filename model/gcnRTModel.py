@@ -24,7 +24,7 @@ from module.CoDecoder import CoDecoder
 from module.Encoder import Encoder
 from module.Fnet import FNet
 from module.PreLayer import PreLayer
-from start.util import sort_dataset, positional_encoding
+from utils import sort_dataset, positional_encoding
 from utils import convert_percentage_to_decimal, get_path, find_servers, generate_causal_mask_pytorch
 
 
@@ -40,7 +40,7 @@ from utils import convert_percentage_to_decimal, get_path, find_servers, generat
 #     t_lon = server_df['lon'].values
 #     t_radius = server_df['radius'].values
 #     edges = [[False for _ in range(len(server_df))] for _ in range(len(server_df))]
-#     t_user_df = user_df.groupby('id')
+#     t_user_df = user_df.groupby('uid')
 #     for uid, g in tqdm(t_user_df):
 #         sorted_g = g.sort_values(by='timestamp')
 #         pre = []

@@ -11,6 +11,7 @@ import torch
 from rich.progress import track
 from torch import nn
 
+from model import Real
 from model.Best import Best
 from model.RTModel import Nut
 from model.LSTM import LSTM
@@ -22,7 +23,7 @@ from utils import get_path
 MODEL_MAP = {
     'LSTM': LSTM,
     'STGCN': STGCN,
-    'CHESTNUT': Nut,
+    'CHESTNUT': Real,
     'BEST': Best
 }
 
@@ -369,10 +370,10 @@ if __name__ == '__main__':
 
     # ------------------------------- load dataset ------------------------------- #
 
-    user_df = pd.read_csv(get_path('users.csv'))
-    load_df = pd.read_csv(get_path('loads.csv'))
-    server_df = pd.read_csv(get_path('servers.csv'))
-    service_df = pd.read_csv(get_path('services.csv'))
+    user_df = pd.read_csv(get_path('user.csv'))
+    load_df = pd.read_csv(get_path('load.csv'))
+    server_df = pd.read_csv(get_path('server.csv'))
+    service_df = pd.read_csv(get_path('service.csv'))
     inv_df = pd.read_csv(get_path('invocation.csv'))
 
     max_time = math.floor(load_df['timestamp'].max() * scale)

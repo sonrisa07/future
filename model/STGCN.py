@@ -14,7 +14,7 @@ from model.QoSModel import QoSModel
 from model.STModel import STModel
 from model.get import getSvc
 from module.PreLayer import PreLayer
-from start.util import StandardScaler, sort_dataset
+from utils import StandardScaler, sort_dataset
 from utils import convert_percentage_to_decimal, get_path
 import torch.nn as nn
 import torch.nn.functional as F

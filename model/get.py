@@ -6,7 +6,7 @@ import numpy as np
 
 
 def getSvc():
-    service_df = pd.read_csv(get_path('services.csv'))
+    service_df = pd.read_csv(get_path('service.csv'))
     inv_df = pd.read_csv(get_path('invocation.csv'))
     df = pd.merge(left=inv_df, right=service_df, left_on='sid', right_on='sid')
     print(df.columns)

@@ -22,7 +22,7 @@ from model.layers import FourierTemporalAttention, AutoEmbedding
 from module.CoDecoder import CoDecoder
 from module.Fnet import FNet
 from module.PreLayer import PreLayer
-from start.util import sort_dataset, positional_encoding
+from utils import sort_dataset, positional_encoding
 from utils import convert_percentage_to_decimal, get_path, find_servers, haversine
 
 
@@ -55,7 +55,7 @@ class MyDataset(Dataset):
 
         t_df = pd.merge(left=load_df, right=server_df, left_on='eid', right_on='eid').reset_index(drop=True)
         t_df = t_df[['timestamp', 'eid', 'computing', 'storage', 'bandwidth']]
-        service_df = pd.read_csv(get_path('services.csv'))
+        service_df = pd.read_csv(get_path('service.csv'))
         temp_df = pd.merge(inv_df, service_df, left_on='sid', right_on='sid').reset_index(drop=True)
         t_df = pd.merge(t_df, temp_df, left_on=['timestamp', 'eid'], right_on=['timestamp', 'eid'], how='left',
                         suffixes=('_server', '_service')).reset_index(drop=True)

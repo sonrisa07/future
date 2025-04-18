@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset, random_split, DataLoader
 
 from model.QoSModel import QoSModel
-from start.util import StandardScaler
+from utils import StandardScaler
 from utils import convert_percentage_to_decimal
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,9 +25,9 @@ class MyDataset(Dataset):
         load_df['storage_load'] = load_df['storage_load'].apply(convert_percentage_to_decimal)
         load_df['bandwidth_load'] = load_df['bandwidth_load'].apply(convert_percentage_to_decimal)
 
-        user_df.sort_values(by=['id', 'timestamp'], inplace=True)
+        user_df.sort_values(by=['uid', 'timestamp'], inplace=True)
 
-        grouped = user_df.groupby('id')
+        grouped = user_df.groupby('uid')
 
         tra_window = dict()
 
@@ -91,7 +91,7 @@ class MyDataset(Dataset):
         self.svc = []
         self.q = []
 
-        for uid in range(user_df['id'].nunique()):
+        for uid in range(user_df['画id'].nunique()):
             self.tra.append(tra_window[uid])
 
         for eid in range(server_df['eid'].nunique()):

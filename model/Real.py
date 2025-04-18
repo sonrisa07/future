@@ -27,7 +27,60 @@ from utils import sort_dataset, positional_encoding
 from utils import convert_percentage_to_decimal, get_path
 
 
-class MyDataset(Dataset):
+def generate_graph(server_df, min_cluster_size, dis):
+    Lon, Lat = server_df['lon'].values, server_df['lat'].values
+
+    def haversine_meters(x, y=None):
+        distance_rad = haversine_distances(x, y)
+        return distance_rad * 6371000
+
+    lat_rad = np.radians(Lat)
+    lon_rad = np.radians(Lon)
+    d_matrix = haversine_meters(np.c_[lat_rad, lon_rad])
+
+    clustering = HDBSCAN(min_cluster_size=min_cluster_size, metric='precomputed').fit_predict(d_matrix)
+
+    g_df = pd.DataFrame({
+        'id': range(len(Lon)),
+        'lon': Lon,
+        'lat': Lat,
+        'group': clustering
+    })
+
+    G = nx.Graph()
+
+    for cluster_label in np.unique(clustering):
+        if cluster_label == -1:
+            continue
+
+        cluster_points = g_df[g_df['group'] == cluster_label]
+
+        core_points = cluster_points[cluster_points['id'].isin(np.where(clustering == cluster_label)[0])]
+
+        for index, row in core_points.iterrows():
+            G.add_node(row['id'], pos=(row['lon'], row['lat']))
+
+        for core_index, core_point in core_points.iterrows():
+            for _, other_point in core_points.iterrows():
+                if core_point['id'] != other_point['id']:
+
+                    core_lat_lon_rad = np.radians([core_point['lat'], core_point['lon']])
+                    other_lat_lon_rad = np.radians([other_point['lat'], other_point['lon']])
+
+                    distance = haversine_meters(np.array([core_lat_lon_rad, other_lat_lon_rad]))
+
+                    if distance[0][1] <= dis:
+                        G.add_edge(core_point['id'], other_point['id'], weight=distance)
+
+    edges_x, edges_y = [], []
+    for x in G.edges:
+        edges_x.append([int(x[0])])
+        edges_y.append([int(x[1])])
+
+    return np.stack([np.hstack(edges_x), np.hstack(edges_y)])
+
+
+class Real(Dataset):
 
     def __init__(self,
                  user_df,
@@ -244,7 +297,7 @@ class NutNet(nn.Module):
         srv_mat = torch.concat((srv_mat, srv.transpose(-2, -3)), dim=-1)  # [t, k, m, ]
 
         u_svc_tot = torch.sum(u_inv, dim=-1, keepdim=True)  # [t, k, n, 1]
-        u_inv = (u_inv @ svc_emb).transpose(-2, -3) / u_svc_tot # [t, k, n, emb_dim * 4]
+        u_inv = (u_inv @ svc_emb).transpose(-2, -3) / u_svc_tot  # [t, k, n, emb_dim * 4]
         usr_mat = usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, n, emb_dim]
         usr_mat = torch.concat((usr_mat, tra.transpose(-2, -3), u_inv), dim=-1)  # [t, k, n, emb_dim * 9]
 
@@ -293,7 +346,7 @@ class Nut:
                  inv_df,
                  k):
         super(Nut, self).__init__()
-        self.dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, k, 1)
+        self.dataset = Real(user_df, server_df, load_df, service_df, inv_df, k, 1)
 
         usr_attr = torch.arange(user_df['uid'].nunique()).view(-1, 1)
         srv_attr = torch.from_numpy(
@@ -302,8 +355,8 @@ class Nut:
 
         self.net = NutNet(user_df['uid'].nunique(), usr_attr, srv_attr, svc_attr,
                           k, 1, 4, 4, 64, 3, 3, 6)
-        # self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
-        self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
+        self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
+        # self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
 
     def get_dataloaders(self, scope, split):
         data_size = len(self.dataset)

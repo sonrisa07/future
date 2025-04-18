@@ -13,7 +13,7 @@ def generate_graph(user_df, server_df):
     edges = [[False for _ in range(len(server_df))] for _ in range(len(server_df))]
 
     # 将 user_df 转为列表形式，减少访问开销
-    user_data = user_df.groupby('id').apply(lambda g: g.sort_values(by='timestamp')[['lat', 'lon']].values).to_dict()
+    user_data = user_df.groupby('uid').apply(lambda g: g.sort_values(by='timestamp')[['lat', 'lon']].values).to_dict()
 
     for uid, rows in track(user_data.items()):
         pre = []
@@ -39,8 +39,8 @@ def generate_graph(user_df, server_df):
 
 
 if __name__ == '__main__':
-    user_df = pd.read_csv(get_path('users.csv'))
-    server_df = pd.read_csv(get_path('servers.csv'))
+    user_df = pd.read_csv(get_path('user.csv'))
+    server_df = pd.read_csv(get_path('server.csv'))
     x = generate_graph(user_df, server_df)
     df = pd.DataFrame(x.T, columns=['source', 'target'])
     df.to_csv(get_path('edges.csv'), index=False)
