@@ -71,7 +71,8 @@ def eval_model(model, val_loader, criterion, edge_index, pac):
             out_batch = model(tra, info, load, svc, edge_index)
             loss = criterion(out_batch, qos)
             batch_loss_list.append(loss.item())
-    elif isinstance(pac, Nut):
+    elif isinstance(pac, (Nut, Real)):
+
         tra, u_inv, srv, e_inv, inter = pac.get_tsp_data()
         tra, srv, inter = tra.to(device), srv.to(device), inter.to(device)
         for info, qos in track(val_loader):
@@ -122,7 +123,8 @@ def predict(model, loader, edge_index, pac):
             qos = qos.cpu().numpy()
             out.append(out_batch)
             y.append(qos)
-    elif isinstance(pac, Nut):
+    elif isinstance(pac, (Nut, Real)):
+
         tra, u_inv, srv, e_inv, inter = pac.get_tsp_data()
         tra, srv, inter = tra.to(device), srv.to(device), inter.to(device)
         for info, qos in track(loader):
@@ -259,7 +261,8 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, criterion, edge_i
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-    elif isinstance(pac, Nut):
+    elif isinstance(pac, (Nut, Real)):
+
         tra, u_inv, srv, e_inv, inter = pac.get_tsp_data()
         tra, srv, inter = tra.to(device), srv.to(device), inter.to(device)
         for info, qos in track(train_loader):
