@@ -225,13 +225,14 @@ class NutNet(nn.Module):
         unique_values, inverse_indices = torch.unique(info[:, 3], return_inverse=True)
         t = len(unique_values)
 
+        tra = tra[unique_values - k]
+        srv = srv[unique_values - k]
+        mask = mask[unique_values - k]
+
         unique_values = unique_values.to('cpu')
 
-        tra = tra[unique_values - k]
         u_inv = u_inv[unique_values - k]
-        srv = srv[unique_values - k]
         e_inv = e_inv[unique_values - k]
-        mask = mask[unique_values - k]
 
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)

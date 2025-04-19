@@ -72,7 +72,6 @@ def eval_model(model, val_loader, criterion, edge_index, pac):
             loss = criterion(out_batch, qos)
             batch_loss_list.append(loss.item())
     elif isinstance(pac, (Nut, Real)):
-
         tra, u_inv, srv, e_inv, inter = pac.get_tsp_data()
         tra, srv, inter = tra.to(device), srv.to(device), inter.to(device)
         for info, qos in track(val_loader):
