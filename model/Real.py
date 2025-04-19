@@ -296,8 +296,7 @@ class NutNet(nn.Module):
 
         srv_mat = torch.concat((srv_mat, srv.transpose(-2, -3)), dim=-1)  # [t, k, m, ]
 
-        u_svc_tot = torch.sum(u_inv, dim=-1, keepdim=True)  # [t, k, n, 1]
-        u_inv = (u_inv @ svc_emb).transpose(-2, -3) / u_svc_tot  # [t, k, n, emb_dim * 4]
+        u_inv = (u_inv @ svc_emb).transpose(-2, -3)  # [t, k, n, emb_dim * 4]
         usr_mat = usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, n, emb_dim]
         usr_mat = torch.concat((usr_mat, tra.transpose(-2, -3), u_inv), dim=-1)  # [t, k, n, emb_dim * 9]
 
