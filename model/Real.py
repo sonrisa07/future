@@ -80,7 +80,7 @@ def generate_graph(server_df, min_cluster_size, dis):
     return np.stack([np.hstack(edges_x), np.hstack(edges_y)])
 
 
-class Real(Dataset):
+class MyDataset(Dataset):
 
     def __init__(self,
                  user_df,
@@ -337,7 +337,7 @@ class NutNet(nn.Module):
         return self
 
 
-class Nut:
+class Real:
     def __init__(self,
                  user_df,
                  server_df,
@@ -345,8 +345,8 @@ class Nut:
                  service_df,
                  inv_df,
                  k):
-        super(Nut, self).__init__()
-        self.dataset = Real(user_df, server_df, load_df, service_df, inv_df, k, 1)
+        super(Real, self).__init__()
+        self.dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, k, 1)
 
         usr_attr = torch.arange(user_df['uid'].nunique()).view(-1, 1)
         srv_attr = torch.from_numpy(
@@ -355,8 +355,8 @@ class Nut:
 
         self.net = NutNet(user_df['uid'].nunique(), usr_attr, srv_attr, svc_attr,
                           k, 1, 4, 4, 64, 3, 3, 6)
-        self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
-        # self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
+        # self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
+        self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
 
     def get_dataloaders(self, scope, split):
         data_size = len(self.dataset)

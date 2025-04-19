@@ -11,7 +11,7 @@ import torch
 from rich.progress import track
 from torch import nn
 
-from model import Real
+from model.Real import Real
 from model.Best import Best
 from model.RTModel import Nut
 from model.LSTM import LSTM

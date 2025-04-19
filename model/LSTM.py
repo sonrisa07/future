@@ -91,7 +91,7 @@ class MyDataset(Dataset):
         self.svc = []
         self.q = []
 
-        for uid in range(user_df['画id'].nunique()):
+        for uid in range(user_df['uid'].nunique()):
             self.tra.append(tra_window[uid])
 
         for eid in range(server_df['eid'].nunique()):
