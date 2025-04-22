@@ -349,7 +349,7 @@ if __name__ == '__main__':
         help="Epochs at which the learning rate decays (default: [])."
     )
     parser.add_argument(
-        "-s", "--score",
+        "-s", "--scope",
         type=float,
         nargs='+',
         default=0.2,
