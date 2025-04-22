@@ -349,6 +349,13 @@ if __name__ == '__main__':
         help="Epochs at which the learning rate decays (default: [])."
     )
     parser.add_argument(
+        "-s", "--score",
+        type=float,
+        nargs='+',
+        default=0.2,
+        help="The dataset scope (default: 0.2)."
+    )
+    parser.add_argument(
         "-dp", "--dropout",
         type=float,
         default=0.1,
@@ -369,6 +376,7 @@ if __name__ == '__main__':
     device = args.device
     model_type = args.model_type
     drop_prob = args.dropout
+    scope = args.scope
 
     # ------------------------------- load dataset ------------------------------- #
 
