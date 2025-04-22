@@ -14,8 +14,6 @@ class DecoderLayer(nn.Module):
     def forward(self, usr_mat, srv_mat, mask):
         x = srv_mat + self.sublayer1(srv_mat, usr_mat, usr_mat, mask)
         x = self.norm(x)
-
         # x = x + self.sublayer2(x)
         # x = self.norm(x)
-
         return x

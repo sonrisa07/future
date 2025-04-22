@@ -36,8 +36,8 @@ milestones = []
 model_type = next(iter(MODEL_MAP))
 
 scale = 1
-epoch = 30
-scope = 0.1
+epoch = 20
+scope = 0.2
 split = 0.8
 device = 'cuda:0'
 
