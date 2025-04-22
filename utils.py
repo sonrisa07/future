@@ -12,10 +12,6 @@ from config import proRoot, fluctuation_min, fluctuation_max, k_rt, MAX_DELAY, B
 
 
 class StandardScaler:
-    """
-    Standard the input
-    https://github.com/nnzhan/Graph-WaveNet/blob/master/util.py
-    """
 
     def __init__(self, mean=None, std=None):
         self.mean = mean
