@@ -106,7 +106,6 @@ class MyDataset(Dataset):
 
         timestamp_values = inv_df['timestamp'].values.astype(np.int32)
         indices = inv_df[['timestamp', 'uid', 'eid', 'sid']].values.astype(np.int32)
-        rt_values = inv_df['rt'].values.astype(np.float32)
 
         inter_np = np.zeros((len(timestamps) - k - p + 1, k, len(server_df), len(ids)), dtype=np.int8)
 
