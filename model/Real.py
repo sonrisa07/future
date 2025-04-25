@@ -23,7 +23,8 @@ from module.CoDecoder import CoDecoder
 from module.Encoder import Encoder
 from module.Fnet import FNet
 from module.PreLayer import PreLayer
-from utils import sort_dataset, positional_encoding
+from start.train import eps
+from utils import sort_dataset, positional_encoding, mercator, meters_to_mercator_unit
 from utils import convert_percentage_to_decimal, get_path
 
 
@@ -353,9 +354,22 @@ class Real:
             server_df[['eid', 'computing', 'storage', 'bandwidth', 'lat', 'lon', 'radius']].values.astype(np.float32))
         svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
 
+        self.dataset.user_tensor[:, 0:2] = mercator(self.dataset.user_tensor[:, 0:2])
+        srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
+
+        all_geo = torch.vstack((self.dataset.user_tensor[:, 0:2], srv_attr[:, 4:]))
+        min_all, _ = torch.min(all_geo, dim=0)
+        max_all, _ = torch.max(all_geo, dim=0)
+
+        mercator_per_meter = meters_to_mercator_unit(1.0, lat_deg=torch.median(srv_attr[srv_attr[:, -3]]).item())
+        mercator_range = (max_all - min_all).max()
+
+        self.dataset.user_tensor[:, 0:2] = (self.dataset.user_tensor[:, 0:2] - min_all) / (max_all - min_all + eps)
+        srv_attr[:, 4:-1] = (srv_attr[:, 4:-1] - min_all) / (max_all - min_all + eps)
+        srv_attr[:, -1] = srv_attr[:, -1] * mercator_per_meter / (mercator_range + eps)
+
         self.net = NutNet(user_df['uid'].nunique(), usr_attr, srv_attr, svc_attr,
                           k, 1, 4, 4, 64, 3, 3, 6)
-        # self.edge_index = torch.LongTensor(generate_graph(server_df, 3, 600))
         self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
 
     def get_dataloaders(self, scope, split):

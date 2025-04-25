@@ -46,6 +46,7 @@ def positional_encoding(x, device):
     mapping[:, 1::2] = torch.cos(pos / col)
     return mapping
 
+
 def get_path(filename: str, root: str = proRoot) -> str:
     return os.path.join(root, filename)
 
@@ -195,3 +196,29 @@ def convert_percentage_to_decimal(percentage_str):
 def generate_causal_mask_pytorch(k):
     causal_mask = torch.tril(torch.ones((k, k), dtype=torch.int32))
     return causal_mask
+
+
+def mercator(x: torch.Tensor) -> torch.Tensor:
+    lat, lon = x[:, 0], x[:, 1]
+    lon = lon * 20037508.342789 / 180
+    lat = torch.log(torch.tan((90 + lat) * torch.pi / 360)) / (torch.pi / 180)
+    lat = lat * 20037508.342789 / 180
+    return torch.vstack((lat, lon))
+
+
+def meters_to_mercator_unit(distance_meters, lat_deg):
+    lat_rad = math.radians(lat_deg)
+    meters_per_degree = 111320 * math.cos(lat_rad)
+    delta_lon_deg = distance_meters / meters_per_degree
+    lon1, lat1 = 0.0, lat_deg
+    lon2, lat2 = lon1 + delta_lon_deg, lat1
+
+    def wgs84toMercator(lon, lat):
+        x = lon * 20037508.342789 / 180
+        y = math.log(math.tan((90 + lat) * math.pi / 360)) / (math.pi / 180)
+        y = y * 20037508.342789 / 180
+        return x, y
+
+    x1, y1 = wgs84toMercator(lon1, lat1)
+    x2, y2 = wgs84toMercator(lon2, lat2)
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
