@@ -71,10 +71,10 @@ class MultiHeadAttention(nn.Module):
         q, k, v = self.split(q), self.split(k), self.split(v)
 
         scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.depth)
-        mask = mask.unsqueeze(-3).expand(-1, -1, scores.shape[-3], -1, -1)
-        scores = scores.masked_fill(mask == 0, -1e10)
+        if mask is not None:
+            mask = mask.unsqueeze(-3).expand(-1, -1, scores.shape[-3], -1, -1)
+            scores = scores.masked_fill(mask == 0, -1e10)
         scores = F.softmax(scores, dim=-1)
-
         out = scores @ v
 
         out = out.transpose(-2, -3).contiguous().view(q.shape[0], q.shape[1], -1, self.d_model)

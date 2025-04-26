@@ -236,14 +236,15 @@ class NutNet(nn.Module):
         self.load_proj = nn.Linear(3, d_model)
         self.fuse_proj = nn.Linear(d_model * 3, d_model)
 
-        self.usr_proj = nn.Linear(emb_dim * 5 + d_model // 2, d_model)
+        self.usr_proj = nn.Linear(emb_dim * 4 + d_model // 2, d_model)
         self.srv_proj = nn.Linear(3, d_model)
 
         self.usr_norm = nn.BatchNorm2d(k)
         self.srv_norm = nn.BatchNorm2d(k)
 
-        self.tra_proj = nn.Linear(5, d_model // 2)
-        self.usr_f_attn = FNet(d_model // 2, 2, 0.0)
+        self.tra_proj = nn.Linear(5 + emb_dim, d_model // 2)
+        self.tra_gru = nn.GRU(d_model // 2, d_model // 2, batch_first=True)
+        self.tra_attn = Encoder(d_model // 2, d_model, 4, 1, 0.2)
         # self.usr_f_attn = Encoder(emb_dim * 2, emb_dim * 4, head, 2, 0.0)
         # self.srv_f_attn = FNet(d_model, 2, 0.2)
         # self.usr_f_attn = LSTM(4, emb_dim * 2)
@@ -256,7 +257,7 @@ class NutNet(nn.Module):
             STConv(srv_attr.shape[0], d_model, 2 * d_model, d_model, kernel_size, cheb_k),
         ])
 
-        self.qos_net = PreLayer(d_model // 2 + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p])
+        self.qos_net = PreLayer(d_model + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p])
 
     def forward(self, tra, u_inv, srv, e_inv, mask, info, qos, edge_index):
         """
@@ -289,20 +290,18 @@ class NutNet(nn.Module):
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)
 
+        usr_mat = usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, n, emb_dim]
+        tra = torch.concat((tra, usr_mat), dim=-1)  # [t, k, n, emb_dim + 5]
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
-        tra = self.usr_f_attn(tra)  # [t, n, k, d_model // 2]
-
-
+        tra = tra.view(t * n, k, -1)
+        tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
+        tra = tra.view(t, n, k, -1) + positional_encoding(tra, tra.device).unsqueeze(0).unsqueeze(1).expand(t, n, -1, -1)
+        tra = self.tra_attn(tra, None)  # [t, n, k, d_model]
 
         srv_mat = self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, m, 3]
 
         u_inv = (u_inv @ svc_emb).transpose(-2, -3)  # [t, k, n, emb_dim * 4]
-        usr_mat = usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, n, emb_dim]
-        usr_mat = torch.concat((usr_mat, tra.transpose(-2, -3), u_inv), dim=-1)  # [t, k, n, emb_dim * 5 + d_model // 2]
-
-        usr_mat = usr_mat.transpose(-2, -3)  # [t, n, k, emb_dim * 5 + d_model // 2]
-
-        usr_mat = usr_mat.transpose(-2, -3)  # [t, k, n, emb_dim * 5 + d_model // 2]
+        usr_mat = torch.concat((tra.transpose(-2, -3), u_inv), dim=-1)  # [t, k, n, emb_dim * 4 + d_model // 2]
 
         usr_mat = self.usr_proj(usr_mat)  # [t, k, n, d_model]
         srv_mat = self.srv_proj(srv_mat)  # [t, k, m, d_model]
@@ -322,11 +321,11 @@ class NutNet(nn.Module):
 
         tem_srv = tem_srv.squeeze(1)  # [t, m, d_model]
 
-        tra = tra[inverse_indices, info[:, 0]]  # [b, d_model // 2]
+        tra = tra[inverse_indices, info[:, 0]]  # [b, d_model]
         tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
         svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
-        x = torch.concat((tra, tem_srv, svc_emb), dim=-1)  # [b, d_model // 2 + d_model + emb_dim * 4]
+        x = torch.concat((tra, tem_srv, svc_emb), dim=-1)  # [b, d_model + d_model + emb_dim * 4]
         x = self.qos_net(x)
 
         return x
