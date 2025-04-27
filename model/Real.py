@@ -23,7 +23,6 @@ from module.CoDecoder import CoDecoder
 from module.Encoder import Encoder
 from module.Fnet import FNet
 from module.PreLayer import PreLayer
-from start.train import eps
 from utils import sort_dataset, positional_encoding, mercator, meters_to_mercator_unit
 from utils import convert_percentage_to_decimal, get_path
 
@@ -388,7 +387,7 @@ class Real:
                 self.dataset.e_svc_tensor, self.dataset.inter_tensor)
 
     def feature_enhance(self, usr_attr, srv_attr, svc_attr):
-        self.dataset.user_tensor[:, 0:2] = mercator(self.dataset.user_tensor[:, 0:2])
+        self.dataset.user_tensor[..., 0:2] = mercator(self.dataset.user_tensor[..., 0:2])
         srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
 
         all_geo = torch.vstack((self.dataset.user_tensor[:, 0:2], srv_attr[:, 4:]))
@@ -398,9 +397,9 @@ class Real:
         mercator_per_meter = meters_to_mercator_unit(1.0, lat_deg=torch.median(srv_attr[srv_attr[:, -3]]).item())
         mercator_range = (max_all - min_all).max()
 
-        self.dataset.user_tensor[:, 0:2] = (self.dataset.user_tensor[:, 0:2] - min_all) / (max_all - min_all + eps)
-        srv_attr[:, 4:-1] = (srv_attr[:, 4:-1] - min_all) / (max_all - min_all + eps)
-        srv_attr[:, -1] = srv_attr[:, -1] * mercator_per_meter / (mercator_range + eps)
+        self.dataset.user_tensor[:, 0:2] = (self.dataset.user_tensor[:, 0:2] - min_all) / (max_all - min_all + 1e-8)
+        srv_attr[:, 4:-1] = (srv_attr[:, 4:-1] - min_all) / (max_all - min_all + 1e-8)
+        srv_attr[:, -1] = srv_attr[:, -1] * mercator_per_meter / (mercator_range + 1e-8)
 
         vx = self.dataset.user_tensor[:, -2] * torch.cos(self.dataset.user_tensor[:, -1])
         vy = self.dataset.user_tensor[:, -2] * torch.sin(self.dataset.user_tensor[:, -1])

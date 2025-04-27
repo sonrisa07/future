@@ -8,11 +8,19 @@ import torch
 from scipy.special import kl_div
 from torch.utils.data import Subset
 
-from config import proRoot, fluctuation_min, fluctuation_max, k_rt, MAX_DELAY, BASE_DELAY, cluster_size, r
+from config import (
+    proRoot,
+    fluctuation_min,
+    fluctuation_max,
+    k_rt,
+    MAX_DELAY,
+    BASE_DELAY,
+    cluster_size,
+    r,
+)
 
 
 class StandardScaler:
-
     def __init__(self, mean=None, std=None):
         self.mean = mean
         self.std = std
@@ -39,9 +47,15 @@ def sort_dataset(subset, dataset, i, j):
 def positional_encoding(x, device):
     k, d = x.shape[-2], x.shape[-1]
     mapping = torch.zeros((k, d), requires_grad=False).to(device)
-    pos = torch.arange(0, k, device=device, dtype=torch.float32, requires_grad=False).unsqueeze(1)
-    col = torch.tensor([10000 ** (2 * i / d) for i in range(0, d, 2)], device=device,
-                       dtype=torch.float32, requires_grad=False)
+    pos = torch.arange(
+        0, k, device=device, dtype=torch.float32, requires_grad=False
+    ).unsqueeze(1)
+    col = torch.tensor(
+        [10000 ** (2 * i / d) for i in range(0, d, 2)],
+        device=device,
+        dtype=torch.float32,
+        requires_grad=False,
+    )
     mapping[:, 0::2] = torch.sin(pos / col)
     mapping[:, 1::2] = torch.cos(pos / col)
     return mapping
@@ -60,12 +74,7 @@ def euclidean_distance(point1: tuple[int, int], point2: tuple[int, int]) -> floa
 
 
 def find_servers(
-        lat,
-        lon,
-        e_ids: list,
-        e_lat: list,
-        e_lon: list,
-        e_radius: list
+    lat, lon, e_ids: list, e_lat: list, e_lon: list, e_radius: list
 ) -> list:
     temp = []
     for i in range(len(e_ids)):
@@ -86,8 +95,8 @@ def haversine(lat1, lon1, lat2, lon2):
     dlat = np.radians(lat2 - lat1)
     dlon = np.radians(lon2 - lon1)
     a = (
-            np.sin(dlat / 2) ** 2
-            + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2) ** 2
+        np.sin(dlat / 2) ** 2
+        + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2) ** 2
     )
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     distance = R * c
@@ -105,7 +114,7 @@ def update_user_position(lat, lon, speed, direction, time):
     # 计算新的纬度和经度
     delta_lat = distance * math.cos(direction_rad) / 111320  # 每度纬度约111.32公里
     delta_lon = (
-            distance * math.sin(direction_rad) / (111320 * math.cos(math.radians(lat)))
+        distance * math.sin(direction_rad) / (111320 * math.cos(math.radians(lat)))
     )
 
     new_lat = lat + delta_lat
@@ -186,7 +195,7 @@ def get_cluster_density(kmeans: sklearn.cluster.KMeans, df: pd.DataFrame):
 
 
 def convert_percentage_to_decimal(percentage_str):
-    percentage_value = float(percentage_str.strip('%'))
+    percentage_value = float(percentage_str.strip("%"))
 
     decimal_value = percentage_value / 100
 
@@ -199,11 +208,11 @@ def generate_causal_mask_pytorch(k):
 
 
 def mercator(x: torch.Tensor) -> torch.Tensor:
-    lat, lon = x[:, 0], x[:, 1]
+    lat, lon = x[..., 0], x[..., 1]
     lon = lon * 20037508.342789 / 180
     lat = torch.log(torch.tan((90 + lat) * torch.pi / 360)) / (torch.pi / 180)
     lat = lat * 20037508.342789 / 180
-    return torch.vstack((lat, lon))
+    return torch.stack((lat, lon), dim=-1)
 
 
 def meters_to_mercator_unit(distance_meters, lat_deg):
