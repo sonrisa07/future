@@ -338,13 +338,10 @@ class NutNet(nn.Module):
 
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)
-        print(tra.shape)
         usr_mat = (
             usr_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)
         )  # [t, n, k, emb_dim]
-        print(usr_mat.shape)
         tra = torch.concat((tra, usr_mat), dim=-1)  # [t, n, k, emb_dim + 5]
-        print(tra.shape)
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
         tra = tra.view(t * n, k, -1)
         tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
