@@ -507,7 +507,7 @@ class Real:
 
         self.dataset.user_tensor = torch.concat(
             (
-                self.dataset.user_tensor[..., -2].unsqueeze(-1),
+                self.dataset.user_tensor[..., 0:2].unsqueeze(-1),
                 vy.unsqueeze(-1),
                 vx.unsqueeze(-1),
                 self.dataset.user_tensor[..., -1].unsqueeze(-1),
