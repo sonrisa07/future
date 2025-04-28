@@ -28,7 +28,7 @@ from utils import convert_percentage_to_decimal, get_path
 
 
 def generate_graph(server_df, min_cluster_size, dis):
-    Lon, Lat = server_df['lon'].values, server_df['lat'].values
+    Lon, Lat = server_df["lon"].values, server_df["lat"].values
 
     def haversine_meters(x, y=None):
         distance_rad = haversine_distances(x, y)
@@ -38,14 +38,13 @@ def generate_graph(server_df, min_cluster_size, dis):
     lon_rad = np.radians(Lon)
     d_matrix = haversine_meters(np.c_[lat_rad, lon_rad])
 
-    clustering = HDBSCAN(min_cluster_size=min_cluster_size, metric='precomputed').fit_predict(d_matrix)
+    clustering = HDBSCAN(
+        min_cluster_size=min_cluster_size, metric="precomputed"
+    ).fit_predict(d_matrix)
 
-    g_df = pd.DataFrame({
-        'id': range(len(Lon)),
-        'lon': Lon,
-        'lat': Lat,
-        'group': clustering
-    })
+    g_df = pd.DataFrame(
+        {"id": range(len(Lon)), "lon": Lon, "lat": Lat, "group": clustering}
+    )
 
     G = nx.Graph()
 
@@ -53,24 +52,31 @@ def generate_graph(server_df, min_cluster_size, dis):
         if cluster_label == -1:
             continue
 
-        cluster_points = g_df[g_df['group'] == cluster_label]
+        cluster_points = g_df[g_df["group"] == cluster_label]
 
-        core_points = cluster_points[cluster_points['id'].isin(np.where(clustering == cluster_label)[0])]
+        core_points = cluster_points[
+            cluster_points["id"].isin(np.where(clustering == cluster_label)[0])
+        ]
 
         for index, row in core_points.iterrows():
-            G.add_node(row['id'], pos=(row['lon'], row['lat']))
+            G.add_node(row["id"], pos=(row["lon"], row["lat"]))
 
         for core_index, core_point in core_points.iterrows():
             for _, other_point in core_points.iterrows():
-                if core_point['id'] != other_point['id']:
+                if core_point["id"] != other_point["id"]:
+                    core_lat_lon_rad = np.radians(
+                        [core_point["lat"], core_point["lon"]]
+                    )
+                    other_lat_lon_rad = np.radians(
+                        [other_point["lat"], other_point["lon"]]
+                    )
 
-                    core_lat_lon_rad = np.radians([core_point['lat'], core_point['lon']])
-                    other_lat_lon_rad = np.radians([other_point['lat'], other_point['lon']])
-
-                    distance = haversine_meters(np.array([core_lat_lon_rad, other_lat_lon_rad]))
+                    distance = haversine_meters(
+                        np.array([core_lat_lon_rad, other_lat_lon_rad])
+                    )
 
                     if distance[0][1] <= dis:
-                        G.add_edge(core_point['id'], other_point['id'], weight=distance)
+                        G.add_edge(core_point["id"], other_point["id"], weight=distance)
 
     edges_x, edges_y = [], []
     for x in G.edges:
@@ -81,34 +87,33 @@ def generate_graph(server_df, min_cluster_size, dis):
 
 
 class MyDataset(Dataset):
+    def __init__(self, user_df, server_df, load_df, service_df, inv_df, k, p):
+        load_df["computing_load"] = load_df["computing_load"].apply(
+            convert_percentage_to_decimal
+        )
+        load_df["storage_load"] = load_df["storage_load"].apply(
+            convert_percentage_to_decimal
+        )
+        load_df["bandwidth_load"] = load_df["bandwidth_load"].apply(
+            convert_percentage_to_decimal
+        )
 
-    def __init__(self,
-                 user_df,
-                 server_df,
-                 load_df,
-                 service_df,
-                 inv_df,
-                 k,
-                 p):
+        inv_df.drop_duplicates(subset=["timestamp", "uid", "eid", "sid"], inplace=True)
 
-        load_df['computing_load'] = load_df['computing_load'].apply(convert_percentage_to_decimal)
-        load_df['storage_load'] = load_df['storage_load'].apply(convert_percentage_to_decimal)
-        load_df['bandwidth_load'] = load_df['bandwidth_load'].apply(convert_percentage_to_decimal)
+        user_df.sort_values(by=["timestamp", "uid"], inplace=True)
+        load_df.sort_values(by=["timestamp", "eid"], inplace=True)
+        inv_df.sort_values(by=["timestamp", "uid", "eid", "sid"], inplace=True)
 
-        inv_df.drop_duplicates(subset=['timestamp', 'uid', 'eid', 'sid'], inplace=True)
+        timestamps = sorted(user_df["timestamp"].unique())
+        ids = sorted(user_df["uid"].unique())
 
-        user_df.sort_values(by=['timestamp', 'uid'], inplace=True)
-        load_df.sort_values(by=['timestamp', 'eid'], inplace=True)
-        inv_df.sort_values(by=['timestamp', 'uid', 'eid', 'sid'], inplace=True)
+        timestamp_values = inv_df["timestamp"].values.astype(np.int32)
+        indices = inv_df[["timestamp", "uid", "eid", "sid"]].values.astype(np.int32)
+        rt_values = inv_df["rt"].values.astype(np.float32)
 
-        timestamps = sorted(user_df['timestamp'].unique())
-        ids = sorted(user_df['uid'].unique())
-
-        timestamp_values = inv_df['timestamp'].values.astype(np.int32)
-        indices = inv_df[['timestamp', 'uid', 'eid', 'sid']].values.astype(np.int32)
-        rt_values = inv_df['rt'].values.astype(np.float32)
-
-        inter_np = np.zeros((len(timestamps) - k - p + 1, k, len(server_df), len(ids)), dtype=np.int8)
+        inter_np = np.zeros(
+            (len(timestamps) - k - p + 1, k, len(server_df), len(ids)), dtype=np.int8
+        )
 
         for b in range(len(timestamps) - k - p + 1):
             st = b
@@ -126,60 +131,84 @@ class MyDataset(Dataset):
 
         self.qos = []
 
-        g = inv_df.groupby(['timestamp', 'uid'])['sid'].apply(list)
+        g = inv_df.groupby(["timestamp", "uid"])["sid"].apply(list)
 
-        svc = [[[0 for _ in range(len(service_df))] for _ in range(len(ids))] for _ in range(len(timestamps))]
+        svc = [
+            [[0 for _ in range(len(service_df))] for _ in range(len(ids))]
+            for _ in range(len(timestamps))
+        ]
 
         for (t, uid), slist in g.items():
             for sid in slist:
                 svc[t][uid][sid] += 1
 
-        svc_tensor = np.zeros((len(timestamps) - k - p + 1, k, len(ids), len(service_df)), dtype=np.float32)
-        user_tensor = np.zeros((len(timestamps) - k - p + 1, k, len(ids), 4), dtype=np.float32)
+        svc_tensor = np.zeros(
+            (len(timestamps) - k - p + 1, k, len(ids), len(service_df)),
+            dtype=np.float32,
+        )
+        user_tensor = np.zeros(
+            (len(timestamps) - k - p + 1, k, len(ids), 4), dtype=np.float32
+        )
 
-        user_np = user_df[['lat', 'lon', 'speed', 'direction']].values.astype(np.float32)
+        user_np = user_df[["lat", "lon", "speed", "direction"]].values.astype(
+            np.float32
+        )
         svc_np = np.array(svc, dtype=np.int32)
 
         for b in range(len(timestamps) - k - p + 1):
-            svc_tensor[b] = svc_np[b:b + k]
+            svc_tensor[b] = svc_np[b : b + k]
             for t in range(k):
-                user_tensor[b, t] = user_np[(b + t) * len(ids):(b + t + 1) * len(ids)]
+                user_tensor[b, t] = user_np[(b + t) * len(ids) : (b + t + 1) * len(ids)]
 
         self.svc_tensor = torch.from_numpy(svc_tensor).permute(0, 2, 1, 3)
         self.user_tensor = torch.from_numpy(user_tensor).permute(0, 2, 1, 3)
 
-        e_svc = [[[0 for _ in range(len(service_df))] for _ in range(len(server_df))] for _ in range(len(timestamps))]
+        e_svc = [
+            [[0 for _ in range(len(service_df))] for _ in range(len(server_df))]
+            for _ in range(len(timestamps))
+        ]
 
-        g = inv_df.groupby(['timestamp', 'eid'])['sid'].apply(list)
+        g = inv_df.groupby(["timestamp", "eid"])["sid"].apply(list)
         for (t, eid), slist in g.items():
             for sid in slist:
                 e_svc[t][eid][sid] += 1
 
         e_svc_np = np.array(e_svc, dtype=np.int32)
 
-        load_np = load_df[['computing_load', 'storage_load', 'bandwidth_load']].values.astype(np.float32)
+        load_np = load_df[
+            ["computing_load", "storage_load", "bandwidth_load"]
+        ].values.astype(np.float32)
 
-        srv_tensor = np.zeros((len(timestamps) - k - p + 1, k, len(server_df), 3), np.float32)
-        e_svc_tensor = np.zeros((len(timestamps) - k - p + 1, k, len(server_df), len(service_df)), dtype=np.float32)
+        srv_tensor = np.zeros(
+            (len(timestamps) - k - p + 1, k, len(server_df), 3), np.float32
+        )
+        e_svc_tensor = np.zeros(
+            (len(timestamps) - k - p + 1, k, len(server_df), len(service_df)),
+            dtype=np.float32,
+        )
 
         for b in range(len(timestamps) - k - p + 1):
-            e_svc_tensor[b] = e_svc_np[b:b + k]
+            e_svc_tensor[b] = e_svc_np[b : b + k]
             for t in range(k):
-                srv_tensor[b, t] = load_np[(b + t) * len(server_df):(b + t + 1) * len(server_df)]
+                srv_tensor[b, t] = load_np[
+                    (b + t) * len(server_df) : (b + t + 1) * len(server_df)
+                ]
 
         self.e_svc_tensor = torch.from_numpy(e_svc_tensor).permute(0, 2, 1, 3)
         self.srv_tensor = torch.from_numpy(srv_tensor).permute(0, 2, 1, 3)
 
         self.chunking = []
 
-        inv_df = inv_df[inv_df['timestamp'] >= k]
-        uids = inv_df['uid'].values
-        eids = inv_df['eid'].values
-        sids = inv_df['sid'].values
-        ts = inv_df['timestamp'].values
-        rts = inv_df[['rt']].values
+        inv_df = inv_df[inv_df["timestamp"] >= k]
+        uids = inv_df["uid"].values
+        eids = inv_df["eid"].values
+        sids = inv_df["sid"].values
+        ts = inv_df["timestamp"].values
+        rts = inv_df[["rt"]].values
         for i in range(len(inv_df)):
-            self.chunking.append(torch.tensor((uids[i], eids[i], sids[i], ts[i]), dtype=torch.int32))
+            self.chunking.append(
+                torch.tensor((uids[i], eids[i], sids[i], ts[i]), dtype=torch.int32)
+            )
             self.qos.append(rts[i])
 
         self.qos = torch.from_numpy(np.array(self.qos, dtype=np.float32))
@@ -206,24 +235,27 @@ class LinearBlock(nn.Module):
 
 
 class NutNet(nn.Module):
-
-    def __init__(self,
-                 n,
-                 usr_attr,
-                 srv_attr,
-                 svc_attr,
-                 k,
-                 p,
-                 emb_dim,
-                 head,
-                 d_model,
-                 kernel_size,
-                 cheb_k,
-                 level):
+    def __init__(
+        self,
+        n,
+        usr_attr,
+        srv_attr,
+        svc_attr,
+        k,
+        p,
+        emb_dim,
+        head,
+        d_model,
+        kernel_size,
+        cheb_k,
+        level,
+    ):
         super(NutNet, self).__init__()
 
         self.usr_attr = usr_attr  # n * 1  uid
-        self.srv_attr = srv_attr  # m * 7  eid, computing, storage, bandwidth, lat, lon, radius
+        self.srv_attr = (
+            srv_attr  # m * 7  eid, computing, storage, bandwidth, lat, lon, radius
+        )
         self.svc_attr = svc_attr  # v * 4  sid, computing, storage, bandwidth
 
         self.srv_attr[:, 1:4] -= 1  # 1 ~ level -> 0 ~ level-1
@@ -251,12 +283,30 @@ class NutNet(nn.Module):
 
         self.decoder = CoDecoder(d_model, 2 * d_model, head, 2, 0.0)
 
-        self.tem_spa_net = nn.ModuleList([
-            STConv(srv_attr.shape[0], d_model, 2 * d_model, d_model, kernel_size, cheb_k),
-            STConv(srv_attr.shape[0], d_model, 2 * d_model, d_model, kernel_size, cheb_k),
-        ])
+        self.tem_spa_net = nn.ModuleList(
+            [
+                STConv(
+                    srv_attr.shape[0],
+                    d_model,
+                    2 * d_model,
+                    d_model,
+                    kernel_size,
+                    cheb_k,
+                ),
+                STConv(
+                    srv_attr.shape[0],
+                    d_model,
+                    2 * d_model,
+                    d_model,
+                    kernel_size,
+                    cheb_k,
+                ),
+            ]
+        )
 
-        self.qos_net = PreLayer(d_model + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p])
+        self.qos_net = PreLayer(
+            d_model + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p]
+        )
 
     def forward(self, tra, u_inv, srv, e_inv, mask, info, qos, edge_index):
         """
@@ -281,7 +331,7 @@ class NutNet(nn.Module):
         tra = tra[unique_values - k]
         srv = srv[unique_values - k]
 
-        unique_values = unique_values.to('cpu')
+        unique_values = unique_values.to("cpu")
 
         u_inv = u_inv[unique_values - k]
         e_inv = e_inv[unique_values - k]
@@ -289,18 +339,26 @@ class NutNet(nn.Module):
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)
 
-        usr_mat = usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, n, emb_dim]
+        usr_mat = (
+            usr_emb.unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)
+        )  # [t, k, n, emb_dim]
         tra = torch.concat((tra, usr_mat), dim=-1)  # [t, k, n, emb_dim + 5]
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
         tra = tra.view(t * n, k, -1)
         tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
-        tra = tra.view(t, n, k, -1) + positional_encoding(tra, tra.device).unsqueeze(0).unsqueeze(1).expand(t, n, -1, -1)
+        tra = tra.view(t, n, k, -1) + positional_encoding(tra, tra.device).unsqueeze(
+            0
+        ).unsqueeze(1).expand(t, n, -1, -1)
         tra = self.tra_attn(tra, None)  # [t, n, k, d_model]
 
-        srv_mat = self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)  # [t, k, m, 3]
+        srv_mat = (
+            self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)
+        )  # [t, k, m, 3]
 
         u_inv = (u_inv @ svc_emb).transpose(-2, -3)  # [t, k, n, emb_dim * 4]
-        usr_mat = torch.concat((tra.transpose(-2, -3), u_inv), dim=-1)  # [t, k, n, emb_dim * 4 + d_model // 2]
+        usr_mat = torch.concat(
+            (tra.transpose(-2, -3), u_inv), dim=-1
+        )  # [t, k, n, emb_dim * 4 + d_model // 2]
 
         usr_mat = self.usr_proj(usr_mat)  # [t, k, n, d_model]
         srv_mat = self.srv_proj(srv_mat)  # [t, k, m, d_model]
@@ -309,7 +367,9 @@ class NutNet(nn.Module):
 
         srv = self.load_proj(srv)  # [t, m, k, d_model]
 
-        tem_srv = torch.concat((tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1)  # [t, k, m, d_model * 3]
+        tem_srv = torch.concat(
+            (tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1
+        )  # [t, k, m, d_model * 3]
 
         tem_srv = self.fuse_proj(tem_srv)  # [t, k, m, d_model]
 
@@ -324,7 +384,9 @@ class NutNet(nn.Module):
         tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
         svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
-        x = torch.concat((tra, tem_srv, svc_emb), dim=-1)  # [b, d_model + d_model + emb_dim * 4]
+        x = torch.concat(
+            (tra, tem_srv, svc_emb), dim=-1
+        )  # [b, d_model + d_model + emb_dim * 4]
         x = self.qos_net(x)
 
         return x
@@ -338,26 +400,39 @@ class NutNet(nn.Module):
 
 
 class Real:
-    def __init__(self,
-                 user_df,
-                 server_df,
-                 load_df,
-                 service_df,
-                 inv_df,
-                 k):
+    def __init__(self, user_df, server_df, load_df, service_df, inv_df, k):
         super(Real, self).__init__()
         self.dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, k, 1)
 
-        usr_attr = torch.arange(user_df['uid'].nunique()).view(-1, 1)
+        usr_attr = torch.arange(user_df["uid"].nunique()).view(-1, 1)
         srv_attr = torch.from_numpy(
-            server_df[['eid', 'computing', 'storage', 'bandwidth', 'lat', 'lon', 'radius']].values.astype(np.float32))
-        svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
+            server_df[
+                ["eid", "computing", "storage", "bandwidth", "lat", "lon", "radius"]
+            ].values.astype(np.float32)
+        )
+        svc_attr = torch.from_numpy(
+            service_df[["sid", "computing", "storage", "bandwidth"]].values.astype(
+                np.int32
+            )
+        )
 
         self.feature_enhance(usr_attr, srv_attr, svc_attr)
 
-        self.net = NutNet(user_df['uid'].nunique(), usr_attr, srv_attr, svc_attr,
-                          k, 1, 4, 4, 64, 3, 3, 6)
-        self.edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
+        self.net = NutNet(
+            user_df["uid"].nunique(),
+            usr_attr,
+            srv_attr,
+            svc_attr,
+            k,
+            1,
+            4,
+            4,
+            64,
+            3,
+            3,
+            6,
+        )
+        self.edge_index = torch.LongTensor(pd.read_csv(get_path("edges.csv")).values.T)
 
     def get_dataloaders(self, scope, split):
         data_size = len(self.dataset)
@@ -367,41 +442,75 @@ class Real:
         train_size = int(split * train_valid_size)
         valid_size = train_valid_size - train_size
 
-        train_dataset, valid_dataset, test_dataset = random_split(self.dataset, [train_size, valid_size, test_size])
+        train_dataset, valid_dataset, test_dataset = random_split(
+            self.dataset, [train_size, valid_size, test_size]
+        )
 
         train_dataset = sort_dataset(train_dataset, self.dataset, 0, 3)
         valid_dataset = sort_dataset(valid_dataset, self.dataset, 0, 3)
         test_dataset = sort_dataset(test_dataset, self.dataset, 0, 3)
 
-        train_loader = DataLoader(train_dataset, batch_size=128, num_workers=4,
-                                  shuffle=False)
-        valid_loader = DataLoader(valid_dataset, batch_size=128, num_workers=4,
-                                  shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=128, num_workers=4,
-                                 shuffle=False)
+        train_loader = DataLoader(
+            train_dataset, batch_size=128, num_workers=4, shuffle=False
+        )
+        valid_loader = DataLoader(
+            valid_dataset, batch_size=128, num_workers=4, shuffle=False
+        )
+        test_loader = DataLoader(
+            test_dataset, batch_size=128, num_workers=4, shuffle=False
+        )
 
         return train_loader, valid_loader, test_loader
 
     def get_tsp_data(self):
-        return (self.dataset.user_tensor, self.dataset.svc_tensor, self.dataset.srv_tensor,
-                self.dataset.e_svc_tensor, self.dataset.inter_tensor)
+        return (
+            self.dataset.user_tensor,
+            self.dataset.svc_tensor,
+            self.dataset.srv_tensor,
+            self.dataset.e_svc_tensor,
+            self.dataset.inter_tensor,
+        )
 
     def feature_enhance(self, usr_attr, srv_attr, svc_attr):
-        self.dataset.user_tensor[..., 0:2] = mercator(self.dataset.user_tensor[..., 0:2])
-	    srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
+        self.dataset.user_tensor[..., 0:2] = mercator(
+            self.dataset.user_tensor[..., 0:2]
+        )
+        srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
 
-	    all_geo = torch.concat((self.dataset.user_tensor[..., 0:2].reshape(-1, 2), srv_attr[..., 4:-1].reshape(-1, 2)), dim=0)
+        all_geo = torch.concat(
+            (
+                self.dataset.user_tensor[..., 0:2].reshape(-1, 2),
+                srv_attr[..., 4:-1].reshape(-1, 2),
+            ),
+            dim=0,
+        )
         min_all, _ = torch.min(all_geo, dim=0)
         max_all, _ = torch.max(all_geo, dim=0)
 
-        mercator_per_meter = meters_to_mercator_unit(1.0, lat_deg=torch.median(srv_attr[srv_attr[:, -3]]).item())
+        mercator_per_meter = meters_to_mercator_unit(
+            1.0, lat_deg=torch.median(srv_attr[srv_attr[:, -3]]).item()
+        )
         mercator_range = (max_all - min_all).max()
 
-        self.dataset.user_tensor[..., 0:2] = (self.dataset.user_tensor[..., 0:2] - min_all) / (max_all - min_all + 1e-8)
+        self.dataset.user_tensor[..., 0:2] = (
+            self.dataset.user_tensor[..., 0:2] - min_all
+        ) / (max_all - min_all + 1e-8)
         srv_attr[:, 4:-1] = (srv_attr[:, 4:-1] - min_all) / (max_all - min_all + 1e-8)
         srv_attr[:, -1] = srv_attr[:, -1] * mercator_per_meter / (mercator_range + 1e-8)
 
-        vx = self.dataset.user_tensor[..., -2] * torch.cos(self.dataset.user_tensor[..., -1])
-        vy = self.dataset.user_tensor[..., -2] * torch.sin(self.dataset.user_tensor[..., -1])
+        vx = self.dataset.user_tensor[..., -2] * torch.cos(
+            self.dataset.user_tensor[..., -1]
+        )
+        vy = self.dataset.user_tensor[..., -2] * torch.sin(
+            self.dataset.user_tensor[..., -1]
+        )
 
-        self.dataset.user_tensor = torch.concat((self.dataset.user_tensor[..., -2].unsqueeze(-1), vy.unsqueeze(-1), vx.unsqueeze(-1), self.dataset.user_tensor[..., -1].unsqueeze(-1)), dim=-1)
+        self.dataset.user_tensor = torch.concat(
+            (
+                self.dataset.user_tensor[..., -2].unsqueeze(-1),
+                vy.unsqueeze(-1),
+                vx.unsqueeze(-1),
+                self.dataset.user_tensor[..., -1].unsqueeze(-1),
+            ),
+            dim=-1,
+        )
