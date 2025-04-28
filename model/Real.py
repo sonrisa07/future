@@ -330,6 +330,7 @@ class NutNet(nn.Module):
 
         tra = tra[unique_values - k]
         srv = srv[unique_values - k]
+        mask = mask[unique_values - k]
 
         unique_values = unique_values.to("cpu")
 
