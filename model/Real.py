@@ -390,7 +390,7 @@ class Real:
         self.dataset.user_tensor[..., 0:2] = mercator(self.dataset.user_tensor[..., 0:2])
 	    srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
 
-	    all_geo = torch.concat((self.dataset.user_tensor[..., 0:2].view(-1, 2), srv_attr[..., 4:-1].view(-1, 2)), dim=0)
+	    all_geo = torch.concat((self.dataset.user_tensor[..., 0:2].reshape(-1, 2), srv_attr[..., 4:-1].reshape(-1, 2)), dim=0)
         min_all, _ = torch.min(all_geo, dim=0)
         max_all, _ = torch.max(all_geo, dim=0)
 
