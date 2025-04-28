@@ -380,7 +380,7 @@ class NutNet(nn.Module):
 
         tem_srv = tem_srv.squeeze(1)  # [t, m, d_model]
 
-        tra = tra[inverse_indices, info[:, 0]]  # [b, d_model]
+        tra = tra[inverse_indices, info[:, 0], -1]  # [b, d_model]
         tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
         svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
