@@ -487,9 +487,7 @@ class Real:
         min_all, _ = torch.min(all_geo, dim=0)
         max_all, _ = torch.max(all_geo, dim=0)
 
-        mercator_per_meter = meters_to_mercator_unit(
-            1.0, lat_deg=torch.median(srv_attr[srv_attr[:, -3]]).item()
-        )
+        mercator_per_meter = meters_to_mercator_unit(1.0, 50)
         mercator_range = (max_all - min_all).max()
 
         self.dataset.user_tensor[..., 0:2] = (
