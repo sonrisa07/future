@@ -281,7 +281,7 @@ class NutNet(nn.Module):
         # self.usr_f_attn = LSTM(4, emb_dim * 2)
         # self.srv_f_attn = LSTM(3, emb_dim * 2)
 
-        self.decoder = CoDecoder(d_model, 2 * d_model, head, 2, 0.0)
+        self.decoder = CoDecoder(d_model, 2 * d_model, head, 2, 0.2)
 
         self.tem_spa_net = nn.ModuleList(
             [
@@ -426,8 +426,8 @@ class Real:
             k,
             1,
             4,
-            4,
-            64,
+            8,
+            128,
             3,
             3,
             6,
