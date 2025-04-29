@@ -387,6 +387,7 @@ class NutNet(nn.Module):
         x = torch.concat(
             (tra, tem_srv, svc_emb), dim=-1
         )  # [b, d_model + d_model + emb_dim * 4]
+        print(x.shape)
         x = self.qos_net(x)
 
         return x
