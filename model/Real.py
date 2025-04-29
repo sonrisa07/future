@@ -305,7 +305,7 @@ class NutNet(nn.Module):
         )
 
         self.qos_net = PreLayer(
-            d_model + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p]
+            d_model // 2 + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p]
         )
 
     def forward(self, tra, u_inv, srv, e_inv, mask, info, qos, edge_index):
@@ -387,7 +387,6 @@ class NutNet(nn.Module):
         x = torch.concat(
             (tra, tem_srv, svc_emb), dim=-1
         )  # [b, d_model + d_model + emb_dim * 4]
-        print(x.shape)
         x = self.qos_net(x)
 
         return x

@@ -16,6 +16,5 @@ class PreLayer(nn.Module):
 
     def forward(self, x):
         for layer in self.net:
-            print(x.shape)
             x = layer(x)
         return x
