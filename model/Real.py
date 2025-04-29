@@ -330,6 +330,7 @@ class NutNet(nn.Module):
 
         tra = tra[unique_values - k]
         srv = srv[unique_values - k]
+        mask = mask[unique_values - k]
 
         unique_values = unique_values.to("cpu")
 
@@ -338,11 +339,10 @@ class NutNet(nn.Module):
 
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)
-
         usr_mat = (
             usr_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)
         )  # [t, n, k, emb_dim]
-        tra = torch.concat((tra, usr_mat), dim=-1)  # [t, k, n, emb_dim + 5]
+        tra = torch.concat((tra, usr_mat), dim=-1)  # [t, n, k, emb_dim + 5]
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
         tra = tra.view(t * n, k, -1)
         tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
@@ -380,7 +380,7 @@ class NutNet(nn.Module):
 
         tem_srv = tem_srv.squeeze(1)  # [t, m, d_model]
 
-        tra = tra[inverse_indices, info[:, 0]]  # [b, d_model]
+        tra = tra[inverse_indices, info[:, 0], -1]  # [b, d_model]
         tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
         svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
@@ -506,7 +506,7 @@ class Real:
 
         self.dataset.user_tensor = torch.concat(
             (
-                self.dataset.user_tensor[..., -2].unsqueeze(-1),
+                self.dataset.user_tensor[..., 0:2],
                 vy.unsqueeze(-1),
                 vx.unsqueeze(-1),
                 self.dataset.user_tensor[..., -1].unsqueeze(-1),
