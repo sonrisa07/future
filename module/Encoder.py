@@ -4,7 +4,6 @@ from module.EncoderLayer import EncoderLayer
 
 
 class Encoder(nn.Module):
-
     def __init__(self, d_model, d_ffn, n_head, depth, dropout):
         super(Encoder, self).__init__()
         self.net = nn.ModuleList([
@@ -15,3 +14,4 @@ class Encoder(nn.Module):
         for net in self.net:
             x = net(x, mask)
         return x
+
