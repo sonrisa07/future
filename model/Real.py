@@ -263,8 +263,9 @@ class NutNet(nn.Module):
 
         self.usr_emb = AutoEmbedding([usr_attr.shape[0]], emb_dim)
         self.svc_emb = AutoEmbedding([svc_attr.shape[0], level, level, level], emb_dim)
+        self.srv_emb = AutoEmbedding([srv_attr.shape[0], level, level, level], emb_dim)
 
-        self.load_proj = nn.Linear(3, d_model)
+        self.load_proj = nn.Linear(3 + 4 * emb_dim, d_model)
         self.fuse_proj = nn.Linear(d_model * 3, d_model)
 
         self.usr_proj = nn.Linear(emb_dim * 4 + d_model // 2, d_model)
@@ -324,6 +325,7 @@ class NutNet(nn.Module):
 
         usr_emb = self.usr_emb(self.usr_attr)  # [n, emb_dim]
         svc_emb = self.svc_emb(self.svc_attr)  # [v, emb_dim * 4]
+        srv_emb = self.srv_emb(self.srv_attr)  # [m, emb_dim * 4]
 
         unique_values, inverse_indices = torch.unique(info[:, 3], return_inverse=True)
         t = len(unique_values)
@@ -344,12 +346,10 @@ class NutNet(nn.Module):
         )  # [t, n, k, emb_dim]
         tra = torch.concat((tra, usr_mat), dim=-1)  # [t, n, k, emb_dim + 5]
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
-        tra = tra.view(t * n, k, -1)
+        tra = tra.contiguous().view(t * n, k, -1)
         tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
-        tra = tra.view(t, n, k, -1) + positional_encoding(tra, tra.device).unsqueeze(
-            0
-        ).unsqueeze(1).expand(t, n, -1, -1)
-        tra = self.tra_attn(tra, None)  # [t, n, k, d_model]
+
+        tra = tra.view(t, n, k, -1)  # [t, n, k, d_model]
 
         srv_mat = (
             self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)
@@ -365,7 +365,7 @@ class NutNet(nn.Module):
 
         tem_srv = self.decoder(usr_mat, srv_mat, mask)  # [t, k, m, d_model]
 
-        srv = self.load_proj(srv)  # [t, m, k, d_model]
+        srv = self.load_proj(torch.concat(srv, srv_emb), dim=-1)  # [t, m, k, d_model]
 
         tem_srv = torch.concat(
             (tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1
@@ -427,7 +427,7 @@ class Real:
             1,
             8,
             4,
-            128,
+            32,
             3,
             3,
             6,
