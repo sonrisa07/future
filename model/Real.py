@@ -325,7 +325,7 @@ class NutNet(nn.Module):
 
         usr_emb = self.usr_emb(self.usr_attr)  # [n, emb_dim]
         svc_emb = self.svc_emb(self.svc_attr)  # [v, emb_dim * 4]
-        srv_emb = self.srv_emb(self.srv_attr[:, :4])  # [m, emb_dim * 4]
+        srv_emb = self.srv_emb(self.srv_attr[:, :4].int())  # [m, emb_dim * 4]
 
         unique_values, inverse_indices = torch.unique(info[:, 3], return_inverse=True)
         t = len(unique_values)
