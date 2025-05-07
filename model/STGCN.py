@@ -1,6 +1,7 @@
 from collections import Counter
 
 import networkx as nx
+from model.layers import AutoEmbedding
 import numpy as np
 import pandas as pd
 import torch
@@ -9,7 +10,7 @@ from torch_geometric_temporal import STConv
 
 from model.STModel import STModel
 from module.PreLayer import PreLayer
-from utils import StandardScaler, sort_dataset
+from utils import StandardScaler, mercator, sort_dataset
 from utils import convert_percentage_to_decimal, get_path
 import torch.nn as nn
 import torch.nn.functional as F
@@ -132,12 +133,12 @@ class MyDataset(Dataset):
 
 class NutNet(nn.Module):
 
-    def __init__(self, load_level, k, srv_res, svc_res, tra_dim=8, emb_dim=8, emb_load_dim=16):
+    def __init__(self, k, srv_res, svc_res, tra_dim=8, emb_dim=8, emb_load_dim=16):
         super(NutNet, self).__init__()
         self.k = k
         self.tra_net = nn.LSTM(4, tra_dim)
-        self.e_emb = nn.Embedding(load_level * 3 + 1, emb_dim)
-        self.s_emb = nn.Embedding(load_level * 3 + 1, emb_dim)
+        self.e_emb = AutoEmbedding([len(srv_res), 7, 7, 7], emb_dim)
+        self.s_emb = AutoEmbedding([len(svc_res), 5, 5, 5], emb_dim)
         self.e_load = nn.Sequential(
             nn.Linear(3 + 3 * emb_dim, emb_load_dim),
             nn.Linear(emb_load_dim, emb_load_dim // 2)
@@ -240,14 +241,17 @@ class STGCN(STModel):
         super().__init__(k)
         self.dataset = MyDataset(user_df, server_df, load_df, service_df, inv_df, k)
         self._scaler = self.dataset.scaler
-        srv_res = np.stack(
-            (server_df['computing'].values, server_df['storage'].values + 6, server_df['bandwidth'].values + 12),
+        self.srv_res = np.stack(
+            (server_df['eid'].values, server_df['lat'].values, server_df['lon'].values, server_df['radius'].values,server_df['computing'].values, server_df['storage'].values, server_df['bandwidth'].values),
             axis=-1)
-        svc_res = np.stack(
-            (service_df['computing'].values, service_df['storage'].values + 6, service_df['bandwidth'].values + 12),
+        self.svc_res = np.stack(
+            (service_df['sid'].values, service_df['computing'].values, service_df['storage'].values, service_df['bandwidth'].values),
             axis=-1)
+        self.srv_res = torch.from_numpy(self.srv_res)
+        self.svc_res = torch.from_numpy(self.svc_res)
+        self.feature_enhance()
         self._edge_index = torch.LongTensor(pd.read_csv(get_path('edges.csv')).values.T)
-        self._net = NutNet(server_df['computing'].nunique(), k, srv_res, svc_res)
+        self._net = NutNet(k, self.srv_res, self.svc_res)
 
     def get_dataloaders(self, scope, split):
         data_size = len(self.dataset)
@@ -271,6 +275,16 @@ class STGCN(STModel):
                                  shuffle=False)
 
         return train_loader, valid_loader, test_loader
+
+     def feature_enhance(self):
+        self.dataset.tra[:, 0:2] = mercator(self.dataset.tra[:, 0], self.dataset.tra[:, 1])
+        self.srv_res[:, 1:3] = mercator(self.srv_res[:, 1], self.srv_res[:, 2])
+        all_geo = torch.concat((self.dataset.tra[:, 0:2], self.srv_res[:, 1:3]), dim=0)
+        print(all_geo.shape)
+
+
+
+
 
     def get_tsp_data(self):
         return self.dataset.load, self.dataset.svc

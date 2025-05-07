@@ -506,9 +506,9 @@ class Real:
 
     def feature_enhance(self, usr_attr, srv_attr, svc_attr):
         self.dataset.user_tensor[..., 0:2] = mercator(
-            self.dataset.user_tensor[..., 0:2]
+            self.dataset.user_tensor[..., 0], self.dataset.user_tensor[..., 1]
         )
-        srv_attr[:, 4:-1] = mercator(srv_attr[:, 4:-1])
+        srv_attr[:, 4:-1] = mercator(srv_attr[:, 4], srv_attr[:, 5])
 
         all_geo = torch.concat(
             (

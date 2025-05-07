@@ -8,19 +8,17 @@ import torch.nn.functional as F
 
 class AutoEmbedding(nn.Module):
 
-    def __init__(self, feature_nums, emb_dim, dropout=0.2):
+    def __init__(self, feature_nums, emb_dim):
         super(AutoEmbedding, self).__init__()
         self.nets = nn.ModuleList()
         for num in feature_nums:
             self.nets.append(nn.Embedding(num, emb_dim))
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = []
         for i, net in enumerate(self.nets):
             out.append(net(x[..., i]))
         out = torch.concat(out, dim=-1)
-        out = self.dropout(out)  # 只在 concat 后加 dropout，不动其它结构
         return out
 
 class FourierTemporalAttention(nn.Module):

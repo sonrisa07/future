@@ -207,8 +207,7 @@ def generate_causal_mask_pytorch(k):
     return causal_mask
 
 
-def mercator(x: torch.Tensor) -> torch.Tensor:
-    lat, lon = x[..., 0], x[..., 1]
+def mercator(lat, lon: torch.Tensor) -> torch.Tensor:
     lon = lon * 20037508.342789 / 180
     lat = torch.log(torch.tan((90 + lat) * torch.pi / 360)) / (torch.pi / 180)
     lat = lat * 20037508.342789 / 180
