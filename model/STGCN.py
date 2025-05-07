@@ -10,7 +10,7 @@ from torch_geometric_temporal import STConv
 
 from model.STModel import STModel
 from module.PreLayer import PreLayer
-from utils import StandardScaler, mercator, sort_dataset
+from utils import StandardScaler, mercator, meters_to_mercator_unit, sort_dataset
 from utils import convert_percentage_to_decimal, get_path
 import torch.nn as nn
 import torch.nn.functional as F
@@ -300,12 +300,34 @@ class STGCN(STModel):
         return train_loader, valid_loader, test_loader
 
     def feature_enhance(self):
+        n = self.dataset.tra.shape[0]
+        k = self.dataset.tra.shape[1]
+        self.dataset.tra = self.dataset.tra.reshape(n * k, 4)
         self.dataset.tra[:, 0:2] = mercator(
             self.dataset.tra[:, 0], self.dataset.tra[:, 1]
         )
         self.srv_res[:, 1:3] = mercator(self.srv_res[:, 1], self.srv_res[:, 2])
         all_geo = torch.concat((self.dataset.tra[:, 0:2], self.srv_res[:, 1:3]), dim=0)
-        print(all_geo.shape)
+        all_min, _ = torch.min(all_geo, dim=0)
+        all_max, _ = torch.max(all_geo, dim=0)
+        eps = 1e-8
+        (self.dataset.tra[:, 0:2] - all_min) / (all_max - all_min + eps)
+        (self.srv_res[:, 1:3] - all_min) / (all_max - all_min + eps)
+        mercator_per_meter = meters_to_mercator_unit(1.0, 50)
+        self.srv_res[:, 3] * mercator_per_meter / (all_max - all_min + eps)
+        self.dataset.tra = self.dataset.tra.reshape(n, k, 4)
+        vx = self.dataset.tra[..., 2] * torch.cos(self.dataset.tra[..., 3])
+        vy = self.dataset.tra[..., 2] * torch.sin(self.dataset.tra[..., 3])
+        self.dataset.tra = torch.concat(
+            (
+                self.dataset.tra[..., 0:2],
+                vx.unsqueeze(-1),
+                vy.unsqueeze(-1),
+                self.dataset.tra[..., -1].unsqueeze(-1),
+            ),
+            dim=-1,
+        )
+        print(self.dataset.tra.shape)
 
     def get_tsp_data(self):
         return self.dataset.load, self.dataset.svc
