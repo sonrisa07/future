@@ -365,7 +365,11 @@ class NutNet(nn.Module):
 
         tem_srv = self.decoder(usr_mat, srv_mat, mask)  # [t, k, m, d_model]
 
-        srv = self.load_proj(torch.concat((srv, srv_emb), dim=-1))  # [t, m, k, d_model]
+        srv = self.load_proj(
+            torch.concat(
+                (srv, srv_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)), dim=-1
+            )
+        )  # [t, m, k, d_model]
 
         tem_srv = torch.concat(
             (tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1
