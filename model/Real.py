@@ -275,7 +275,8 @@ class NutNet(nn.Module):
         self.srv_norm = nn.BatchNorm2d(k)
 
         self.tra_proj = nn.Linear(5 + emb_dim, d_model // 2)
-        self.tra_gru = nn.GRU(d_model // 2, d_model // 2, batch_first=True)
+        # self.tra_gru = nn.GRU(d_model // 2, d_model // 2, batch_first=True)
+        self.tra_lstm = nn.LSTM(d_model // 2, d_model)
         self.tra_attn = Encoder(d_model // 2, d_model, 4, 1, 0.2)
         # self.usr_f_attn = Encoder(emb_dim * 2, emb_dim * 4, head, 2, 0.0)
         # self.srv_f_attn = FNet(d_model, 2, 0.2)
@@ -283,6 +284,8 @@ class NutNet(nn.Module):
         # self.srv_f_attn = LSTM(3, emb_dim * 2)
 
         self.decoder = CoDecoder(d_model, 2 * d_model, head, 2, 0.2)
+
+        self.load_net = nn.Linear(emb_dim * 4 + 3, d_model)
 
         self.tem_spa_net = nn.ModuleList(
             [
@@ -305,9 +308,7 @@ class NutNet(nn.Module):
             ]
         )
 
-        self.qos_net = PreLayer(
-            d_model // 2 + d_model + emb_dim * 4, [128, 64, 32, 16, 8, 4, p]
-        )
+        self.qos_net = PreLayer(d_model // 2 + d_model + emb_dim * 4, [32, 16, 8, p])
 
     def forward(self, tra, u_inv, srv, e_inv, mask, info, qos, edge_index):
         """
@@ -341,57 +342,85 @@ class NutNet(nn.Module):
 
         u_inv = u_inv.to(tra.device)
         e_inv = e_inv.to(tra.device)
+
         usr_mat = (
             usr_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)
         )  # [t, n, k, emb_dim]
         tra = torch.concat((tra, usr_mat), dim=-1)  # [t, n, k, emb_dim + 5]
         tra = self.tra_proj(tra)  # [t, n, k, d_model // 2]
-        tra = tra.contiguous().view(t * n, k, -1)
-        tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
+        tra, _ = self.tra_lstm(tra)
+        tra = tra[:, :, -1, :]  # [t, n, d_model // 2]
 
-        tra = tra.view(t, n, k, -1)  # [t, n, k, d_model]
+        srv_mat = torch.concat(
+            (srv_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1), srv), dim=-1
+        )  # [t, m, k, emb_dim * 4 + 3]
 
-        srv_mat = (
-            self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)
-        )  # [t, k, m, 3]
-
-        u_inv = (u_inv @ svc_emb).transpose(-2, -3)  # [t, k, n, emb_dim * 4]
-        usr_mat = torch.concat(
-            (tra.transpose(-2, -3), u_inv), dim=-1
-        )  # [t, k, n, emb_dim * 4 + d_model // 2]
-
-        usr_mat = self.usr_proj(usr_mat)  # [t, k, n, d_model]
-        srv_mat = self.srv_proj(srv_mat)  # [t, k, m, d_model]
-
-        tem_srv = self.decoder(usr_mat, srv_mat, mask)  # [t, k, m, d_model]
-
-        srv = self.load_proj(
-            torch.concat(
-                (srv, srv_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)), dim=-1
-            )
-        )  # [t, m, k, d_model]
-
-        tem_srv = torch.concat(
-            (tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1
-        )  # [t, k, m, d_model * 3]
-
-        tem_srv = self.fuse_proj(tem_srv)  # [t, k, m, d_model]
-
-        tem_srv = self.srv_norm(tem_srv)  # [t, k, m, d_model]
+        tem_srv = self.load_net(srv_mat)  # [t, m, k, d_model]
 
         for net in self.tem_spa_net:
             tem_srv = net(tem_srv, edge_index)
 
         tem_srv = tem_srv.squeeze(1)  # [t, m, d_model]
+        tra = tra[inverse_indices, info[:, 0]]  # [b, d_model // 2]
 
-        tra = tra[inverse_indices, info[:, 0], -1]  # [b, d_model]
         tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
+
         svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
         x = torch.concat(
             (tra, tem_srv, svc_emb), dim=-1
-        )  # [b, d_model + d_model + emb_dim * 4]
+        )  # [b, d_model // 2 + d_model + emb_dim * 4]
+
         x = self.qos_net(x)
+
+        return x
+
+        # tra = tra.contiguous().view(t * n, k, -1)
+        # tra, _ = self.tra_gru(tra)  # [t * n, k, d_model]
+        #
+        # tra = tra.view(t, n, k, -1)  # [t, n, k, d_model]
+        #
+        # srv_mat = (
+        #     self.srv_attr[:, -3:].unsqueeze(0).unsqueeze(1).expand(t, k, -1, -1)
+        # )  # [t, k, m, 3]
+        #
+        # u_inv = (u_inv @ svc_emb).transpose(-2, -3)  # [t, k, n, emb_dim * 4]
+        # usr_mat = torch.concat(
+        #     (tra.transpose(-2, -3), u_inv), dim=-1
+        # )  # [t, k, n, emb_dim * 4 + d_model // 2]
+        #
+        # usr_mat = self.usr_proj(usr_mat)  # [t, k, n, d_model]
+        # srv_mat = self.srv_proj(srv_mat)  # [t, k, m, d_model]
+        #
+        # tem_srv = self.decoder(usr_mat, srv_mat, mask)  # [t, k, m, d_model]
+        #
+        # srv = self.load_proj(
+        #     torch.concat(
+        #         (srv, srv_emb.unsqueeze(0).unsqueeze(2).expand(t, -1, k, -1)), dim=-1
+        #     )
+        # )  # [t, m, k, d_model]
+        #
+        # tem_srv = torch.concat(
+        #     (tem_srv, srv.transpose(-2, -3), srv_mat), dim=-1
+        # )  # [t, k, m, d_model * 3]
+        #
+        # tem_srv = self.fuse_proj(tem_srv)  # [t, k, m, d_model]
+        #
+        # tem_srv = self.srv_norm(tem_srv)  # [t, k, m, d_model]
+        #
+        # for net in self.tem_spa_net:
+        #     tem_srv = net(tem_srv, edge_index)
+        #
+        # tem_srv = tem_srv.squeeze(1)  # [t, m, d_model]
+        #
+        # tra = tra[inverse_indices, info[:, 0], -1]  # [b, d_model]
+        # tem_srv = tem_srv[inverse_indices, info[:, 1]]  # [b, d_model]
+        # svc_emb = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
+        #
+        # x = torch.concat(
+        #     (tra, tem_srv, svc_emb), dim=-1
+        # )  # [b, d_model + d_model + emb_dim * 4]
+        # x = self.qos_net(x)
 
         return x
 
