@@ -138,10 +138,11 @@ class MyDataset(Dataset):
 
 
 class NutNet(nn.Module):
-    def __init__(self, k, srv_res, svc_res, tra_dim=8, emb_dim=8, emb_load_dim=16):
+    def __init__(self, k, srv_res, svc_res, tra_dim=16, emb_dim=8, emb_load_dim=16):
         super(NutNet, self).__init__()
         self.k = k
-        self.tra_net = nn.LSTM(4, tra_dim)
+        self.tra_net = nn.LSTM(5 + emb_dim, tra_dim)
+        self.u_emb = AutoEmbedding([1000], emb_dim)
         self.e_emb = AutoEmbedding([len(srv_res), 7, 7, 7], emb_dim)
         self.s_emb = AutoEmbedding([len(svc_res), 5, 5, 5], emb_dim)
         self.e_load = nn.Sequential(
@@ -156,12 +157,12 @@ class NutNet(nn.Module):
         )
         self.qos_net = PreLayer(64 + 3 * emb_dim, [32, 16, 1])
 
-        self.srv_res = torch.tensor(srv_res)
-        self.svc_res = torch.tensor(svc_res)
+        self.srv_res = srv_res
+        self.svc_res = svc_res
 
     def forward(self, tra, info, load, svc, edge_index):
         """
-        :param tra: (batch, k, 4)
+        :param tra: (batch, k, 5)
         :param info: (batch, 4)
         :param load: (T, k, N_srv, 3)
         :param svc: (T, k, N_srv, N_svc)
@@ -169,19 +170,12 @@ class NutNet(nn.Module):
         :return: (2,)
         """
 
-        srv_res_emb = self.e_emb(self.srv_res)  # N_srv * 3 * emb_dim
-        svc_res_emb = self.s_emb(self.svc_res)  # N_svc * 3 * emb_dim
-        srv_res_emb = srv_res_emb.contiguous().view(
-            -1, 3 * self.e_emb.embedding_dim
-        )  # N_srv * (3*emb_dim)
-        svc_res_emb = svc_res_emb.contiguous().view(
-            -1, 3 * self.e_emb.embedding_dim
-        )  # N_svc * (3*emb_dim)
+        usr_emb = self.u_emb(info[:, 0])  # [b, emb_dim]
 
         # *********** 轨迹预测 ***********
-        tra, _ = self.tra_net(tra)  # b * k * 8
+        tra, _ = self.tra_net(torch.concat((tra, usr_emb), dim=-1))  # b * k * tra_dim
 
-        tra = tra[:, -1, :]  # b * 8
+        tra = tra[:, -1, :]  # b * tra_dim
         # *******************************
 
         unique_values, inverse_indices = torch.unique(info[:, 3], return_inverse=True)
@@ -189,45 +183,20 @@ class NutNet(nn.Module):
         load, svc = load[pos].to(tra.device), svc[pos].to(tra.device)
 
         # ****** 服务器资源embedding ******
-        e_rate = srv_res_emb.unsqueeze(0).expand(
-            self.k, -1, -1
-        )  # k * N_srv * (3*emb_dim)
+        srv_emb = self.e_emb(self.srv_res[:, :4])  # [m, emb_dim * 4]
+
         # *******************************
 
         # **** 服务器资源 + 服务器负载 ****
-        e_load = self.e_load(
-            torch.concat(
-                (load, e_rate.unsqueeze(0).expand(load.shape[0], -1, -1, -1)), -1
-            )
-        )  # t * k * N_srv * (3 + 3 * emb_dim) -> t * k * N_srv * emb_load_dim // 2
-
-        e_load = F.relu(e_load)
-        # *******************************
-
-        # **********服务供给总和**********
-        svc_tot = svc @ svc_res_emb  # t * k * N_srv * (3*emb_dim)
         # *******************************
 
         # *******服务需求embedding********
-        s_rate = svc_res_emb[info[:, 2]]  # b * (3*emb_dim)
         # *******************************
 
         # ********服务器时空预测**********
-        e_load = torch.concat(
-            (e_load, svc_tot), -1
-        )  # t * k * N_srv * (emb_load_dim // 2 + 3 * emb_dim)
-
-        for net in self.load_net:
-            e_load = net(e_load, edge_index)
-
-        e_load = e_load.squeeze(1)
-        e_load = e_load[inverse_indices, info[:, 1]]  # b * 56
-
         # *******************************
 
         # *************QoS预测************
-        x = torch.concat((tra, e_load, s_rate), -1)
-        x = self.qos_net(x)
         # *******************************
 
         return x
@@ -313,8 +282,9 @@ class STGCN(STModel):
         eps = 1e-8
         (self.dataset.tra[:, 0:2] - all_min) / (all_max - all_min + eps)
         (self.srv_res[:, 1:3] - all_min) / (all_max - all_min + eps)
-        mercator_per_meter = meters_to_mercator_unit(1.0, 50)
-        self.srv_res[:, 3] * mercator_per_meter / (all_max - all_min + eps)
+        col = self.srv_res[:, 3]
+        norm_col = (col - col.min()) / (col.max() - col.min())
+        self.srv_res[:, 3] = norm_col
         self.dataset.tra = self.dataset.tra.reshape(n, k, 4)
         vx = self.dataset.tra[..., 2] * torch.cos(self.dataset.tra[..., 3])
         vy = self.dataset.tra[..., 2] * torch.sin(self.dataset.tra[..., 3])
@@ -327,7 +297,6 @@ class STGCN(STModel):
             ),
             dim=-1,
         )
-        print(self.dataset.tra.shape)
 
     def get_tsp_data(self):
         return self.dataset.load, self.dataset.svc
