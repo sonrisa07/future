@@ -103,6 +103,19 @@ def haversine(lat1, lon1, lat2, lon2):
     return distance.item() * 1000  # 返回距离（米）
 
 
+def haversine_np(lat1, lon1, lat2, lon2: np.ndarray) -> np.ndarray:
+    R = 6371  # 地球半径（公里）
+    dlat = np.radians(lat2 - lat1)
+    dlon = np.radians(lon2 - lon1)
+    a = (
+        np.sin(dlat / 2) ** 2
+        + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2) ** 2
+    )
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    distance = R * c
+    return distance * 1000  # 返回距离（米）
+
+
 # 找到用户移动后的位置
 def update_user_position(lat, lon, speed, direction, time):
     # 将速度和时间转化为移动的距离（米）
