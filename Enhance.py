@@ -30,12 +30,17 @@ df = pd.merge(
     suffixes=(("_u", "_e")),
 )
 df.drop(
-    columns=["uid", "sid", "rt", "computing", "storage", "bandwidth"],
+    columns=["computing", "storage", "bandwidth"],
     axis=1,
     inplace=True,
 )
 
 columns = [
+    "uid",
+    "eid",
+    "sid",
+    "timestamp",
+    "rt",
     "link_distance",  # 真实距离
     "radial_speed",  # 径向速度
     "tangential_speed",  # 切向速度
@@ -45,6 +50,11 @@ columns = [
     "edge_margin",  # 距离边界
 ]
 
+eid = df["eid"].to_numpy()
+sid = df["sid"].to_numpy()
+uid = df["uid"].to_numpy()
+ts = df["timestamp"].to_numpy()
+rt = df["rt"].to_numpy()
 u_lat = df["lat_u"].to_numpy()
 u_lon = df["lon_u"].to_numpy()
 e_lat = df["lat_e"].to_numpy()
@@ -82,6 +92,11 @@ heading_offset = np.abs(
 edge_margin = radius - link_dis
 feature = np.stack(
     [
+        uid,
+        eid,
+        sid,
+        ts,
+        rt,
         link_dis,
         radial_speed,
         tangential_speed,
