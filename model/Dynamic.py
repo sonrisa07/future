@@ -1,5 +1,7 @@
 from collections import Counter
 import random
+from module.Mfstgcn import Mfstgcn
+from module.PreLayer import PreLayer
 from rich.progress import track
 
 import numpy as np
@@ -166,32 +168,44 @@ class MyDataset(IterableDataset):
 
 
 class DynamicNet(nn.Module):
-    def __init__(self, n_user, n_server, n_service, srv_level, svc_level, k, emb_dim, edge_d, tra_hidden,):
+    def __init__(self, n_user, n_server, n_service, srv_level, svc_level, k, emb_dim, edge_d, tra_hidden, feature_dim, tem_kernel, d):
         super(DynamicNet, self).__init__()
         self.user_emb = AutoEmbedding([n_user], emb_dim)
         self.srv_emb = AutoEmbedding([n_server, srv_level, srv_level, srv_level], emb_dim)
         self.svc_emb = AutoEmbedding([n_service, svc_level, svc_level, svc_level], emb_dim)
         self.lstm = nn.LSTM(4, tra_hidden)
         
-        self.E1 = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
-        self.E2 = nn.Parameter(torch.empty(k, edge_d))
-        self.proj_edge = nn.Linear(11, edge_d)
+        self.E1_p = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
+        self.E2_p = nn.Parameter(torch.empty(k, edge_d))
+        self.proj_edge_p = nn.Linear(11, edge_d)
 
-        nn.init.xavier_uniform_(self.E1)
-        nn.init.normal_(self.E2, mean=0, std=0.01)
+        nn.init.xavier_uniform_(self.E1_p)
+        nn.init.normal_(self.E2_p, mean=0, std=0.01)
 
-        self.tem_gcn = DCN()
+        self.E1_a = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
+        self.E2_a = nn.Parameter(torch.empty(k, edge_d))
+        self.proj_edge_a = nn.Linear(11, edge_d)
 
+        nn.init.xavier_uniform_(self.E1_a)
+        nn.init.normal_(self.E2_a, mean=0, std=0.01)
+
+        self.proj_p = nn.Linear(3, feature_dim)
+        self.proj_a = nn.Linear(3, feature_dim)
+
+        self.mfstgcn = Mfstgcn(feature_dim, tem_kernel, d, 2)
         
+        self.qos_net = PreLayer(emb_dim * 4 * 2 + feature_dim, [64, 32, 16, 8, 4, 1])
 
-    def forward(self, srv_attr, svc_attr, edge, load, tra, info):
+
+    def forward(self, srv_attr, svc_attr, edge, load, svc_tot, tra, info):
         """
         :param srv_attr: N_e * 4
         :param svc_attr: N_s * 4
         :param edge: k * N_e * 11 [lat, lon, radius,...(8)]
         :param load: k * N_e * 3
+        :param svc_tot: k * N_e * 3
         :param tra: b * k * 4 [lat, lon, speed, direction]
-        :param info: b * k * 2 [eid, sid]
+        :param info: b * 2 [eid, sid]
         """
 
         srv_emb = self.srv_emb(srv_attr) # [N_e, emb_dim * 4]
@@ -199,13 +213,36 @@ class DynamicNet(nn.Module):
 
         tra = self.lstm(tra)[:, -1, :] # [b, tra_hidden]
         edge = self.proj_edge(edge) # [k, n_e, edge_d]
-        
-        A_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1, self.E2, edge, edge)
-        A_pos = F.relu(A_tmp)
-        A = torch.softmax(A_pos, dim=-1) # [k, N_e, N_e]
 
-        load = load.unsqueeze(0);
-        load = 
+        A_p_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_p, self.E2_p, edge, edge)
+        A_p_pos = F.relu(A_p_tmp)
+        A_p = torch.softmax(A_p_pos, dim=-1) # [k, N_e, N_e]
+        
+        A_a_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_a, self.E2_a, edge, edge)
+        A_a_pos = F.relu(A_a_tmp)
+        A_a = torch.softmax(A_a_pos, dim=-1) # [k, N_e, N_e]
+
+        load = load.unsqueeze(0) # [1, k, N_e, 3]
+        svc_tot = svc_tot.unsqueeze(0) # [1, k, N_e, 3]
+
+        load = self.proj_p(load)
+        svc_tot = self.proj_a(svc_tot)
+
+        srv_fea = self.mfstgcn(load, svc_tot, A_p, A_a) # depth * [1, N_e, feature_dim]
+
+        srv_fea = torch.stack(srv_fea, dim=1) # [1, depth, N_e, feature_dim]
+
+        srv_fea = torch.mean(srv_fea, dim=1).squeeze(0) # [N_e, feature_dim]
+
+        srv_fea = torch.concat((srv_fea[info[:, 0]], srv_emb[info[:, 0]]), dim=0) # [b, feature_dim + emb_dim * 4]
+
+        svc_fea = svc_emb[info[:, 1]] # [b, emb_dim * 4]
+
+        qos = self.qos_net(torch.concat((tra, srv_fea, svc_fea), dim=0))
+
+        return qos
+        
+
 
 
 

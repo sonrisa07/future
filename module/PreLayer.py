@@ -9,7 +9,7 @@ class PreLayer(nn.Module):
         pre = d
 
         for x in hidden[:-1]:
-            self.net.extend([nn.Linear(pre, x), nn.BatchNorm1d(x), nn.ReLU()])
+            self.net.extend([nn.Linear(pre, x), nn.BatchNorm1d(x), nn.ReLU(), nn.Dropout(0.1)])
             pre = x
 
         self.net.append(nn.Linear(pre, hidden[-1]))
