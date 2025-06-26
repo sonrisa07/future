@@ -11,6 +11,7 @@ import torch
 from rich.progress import track
 from torch import nn
 
+from model.Dynamic import Dynamic
 from model.Real import Real
 from model.Best import Best
 from model.RTModel import Nut
@@ -24,7 +25,9 @@ MODEL_MAP = {
     'LSTM': LSTM,
     'STGCN': STGCN,
     'CHESTNUT': Real,
-    'BEST': Best
+    'BEST': Best,
+    'DYNAMIC': Dynamic
+
 }
 
 lr = 1e-2
@@ -95,6 +98,15 @@ def eval_model(model, val_loader, criterion, edge_index, pac):
             out_batch = out_batch.view(-1, 1)
             loss = criterion(out_batch, qos)
             batch_loss_list.append(loss.item())
+    elif isinstance(pac, Dynamic):
+        for tra, edge, load, svc_tot, info, qos in track(train_loader):
+            tra, edge, load, svc_tot, info, qos = (
+                tra.to(device), edge.to(device), load.to(device), svc_tot.to(device), info.to(device), qos.to(device))
+            out_batch = model(edge, load, svc_tot, tra, info)
+            qos = qos.view(-1, 1)
+            out_batch = out_batch.view(-1, 1)
+            loss = criterion(out_batch, qos)
+            batch_loss_list.append(loss.item())
 
     return np.mean(batch_loss_list)
 
@@ -143,6 +155,15 @@ def predict(model, loader, edge_index, pac):
                 device), tot_s.to(device), tot_b.to(device), qos.to(device)
             out_batch = model(u_lat, u_lon, u_speed, u_direction, e_lat, e_lon, e_radius, e_c, e_s, e_b, rate_c, rate_s,
                               rate_b, s_c, s_s, s_b, tot_c, tot_s, tot_b)
+            out_batch = out_batch.cpu().numpy()
+            qos = qos.cpu().numpy()
+            out.append(out_batch)
+            y.append(qos)
+    elif isinstance(pac, Dynamic):
+        for tra, edge, load, svc_tot, info, qos in track(train_loader):
+            tra, edge, load, svc_tot, info, qos = (
+                tra.to(device), edge.to(device), load.to(device), svc_tot.to(device), info.to(device), qos.to(device))
+            out_batch = model(edge, load, svc_tot, tra, info)
             out_batch = out_batch.cpu().numpy()
             qos = qos.cpu().numpy()
             out.append(out_batch)
@@ -291,7 +312,18 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, criterion, edge_i
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
+    elif isinstance(pac, Dynamic):
+        for tra, edge, load, svc_tot, info, qos in track(train_loader):
+            tra, edge, load, svc_tot, info, qos = (
+                tra.to(device), edge.to(device), load.to(device), svc_tot.to(device), info.to(device), qos.to(device))
+            preds = model(edge, load, svc_tot, tra, info)
+            qos = qos.view(-1, 1)
+            preds = preds.view(-1, 1)
+            loss = criterion(preds, qos)
+            batch_loss_list.append(loss.detach().item())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
     else:
         pass
     epoch_loss = np.mean(batch_loss_list)
