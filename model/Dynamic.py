@@ -107,10 +107,18 @@ class MyDataset(IterableDataset):
         user_np = user_df[
             ["timestamp", "uid", "lat", "lon", "speed", "direction"]
         ].to_numpy()
-        user_t_d = {}
+        tra_d = {}
         for i in range(len(user_np)):
-            t, uid = user_np[i][0].item(), user_np[i][1].item()
-            user_t_d[(t, uid)] = user_np[i][1:]
+            uid, t = user_np[i][1], user_np[i][0]
+            tra_d[(t, uid)] = user_np[i, 2:]
+        
+        t_list = []
+        for t in range(t_len):
+            temp = []
+            for uid in range(len(user_np)):
+                temp.append(tra_d[(t, uid)])
+            t_list.append(np.stack(temp, axis=0))
+        tra_np = np.stack(t_list, axis=0)
 
         service_df.sort_values("sid", inplace=True)
         svc_np = service_df[["sid", "computing", "storage", "bandwidth"]].to_numpy()
@@ -118,35 +126,33 @@ class MyDataset(IterableDataset):
 
         self.srv_tensor = torch.from_numpy(server_df[["eid", "computing", "storage", "bandwidth"]].to_numpy())
 
-        self.end_d_user = {}
         self.end_d_info = {}
         self.end_d_rt = {}
         self.edge_tensor = []
         self.load_tensor = []
+        self.tra_tensor = []
         for st in range(t_len - k):
             en = st + k
             self.edge_tensor.append(eh_srv_np[st : st + k])
             self.load_tensor.append(load_np[st : st + k])
+            self.tra_tensor.append(tra_np[st : st + k])
             temp_u = []
             temp_i = []
             temp_r = []
             for uid, eid, sid, rt in inv_d[en]:
-                temp = []
-                for i in range(st, en):
-                    temp.append(user_t_d[(i, uid)])
                 temp_u.append(np.stack(temp, axis=0))
-                temp_i.append(np.array([eid, sid]))
+                temp_i.append(np.array([uid, eid, sid]))
                 temp_r.append(rt)
-            self.end_d_user[st] = torch.from_numpy(np.stack(temp_u, axis=0))
-            self.end_d_info[st] = torch.from_numpy(np.stack(temp_i, axis=0))
+            self.end_d_info[st] = torch.from_numpy(np.stack(temp_i, dtype=np.int32, axis=0))
             self.end_d_rt[st] = torch.from_numpy(np.stack(temp_r, axis=0))
 
-        self.edge_tensor = np.stack(self.edge_tensor, axis=0)
-        self.load_tensor = np.stack(self.load_tensor, axis=0)
+        self.edge_tensor = torch.from_numpy(np.stack(self.edge_tensor, axis=0))
+        self.load_tensor = torch.from_numpy(np.stack(self.load_tensor, axis=0))
+        self.tra_tensor = torch.from_numpy(np.stack(self.tra_tensor, axis=0))
 
-        print(self.edge_tensor.shape)
-        print(self.load_tensor.shape)
-        print(len(self.end_d_user))
+        print(self.tra_tensor.shape)  # [frame, k, N_u, 4]
+        print(self.edge_tensor.shape) # [frame, k, N_e, 11]
+        print(self.load_tensor.shape) # [frame, k, N_e, 3]
         print(len(self.end_d_info))
         print(len(self.end_d_rt))
 
@@ -156,11 +162,11 @@ class MyDataset(IterableDataset):
             random.shuffle(idxes)
         for t in idxes:
             yield (
-                self.edge_tensor[t],
-                self.load_tensor[t],
-                self.end_d_user[t],
-                self.end_d_info[t],
-                self.end_d_rt[t],
+                self.tra_tensor[t], # [k, N_u, 4]
+                self.edge_tensor[t], # [k, N_e, 11]
+                self.load_tensor[t], # [k, N_e, 3]
+                self.end_d_info[t], # [b, 3]
+                self.end_d_rt[t], # [b, 1]
             )
 
     def get_ext_data(self):
@@ -168,12 +174,12 @@ class MyDataset(IterableDataset):
 
 
 class DynamicNet(nn.Module):
-    def __init__(self, n_user, n_server, n_service, srv_level, svc_level, k, emb_dim, edge_d, tra_hidden, feature_dim, tem_kernel, d):
+    def __init__(self, n_user, n_server, n_service, srv_level, svc_level, k, emb_dim=8, edge_d=8, tra_hidden=16, feature_dim=32, tem_kernel=3, d=[1, 2, 2, 1]):
         super(DynamicNet, self).__init__()
-        self.user_emb = AutoEmbedding([n_user], emb_dim)
+        self.usr_emb = AutoEmbedding([n_user], emb_dim)
         self.srv_emb = AutoEmbedding([n_server, srv_level, srv_level, srv_level], emb_dim)
         self.svc_emb = AutoEmbedding([n_service, svc_level, svc_level, svc_level], emb_dim)
-        self.lstm = nn.LSTM(4, tra_hidden)
+        self.lstm = nn.LSTM(emb_dim + 4, tra_hidden, batch_first=True)
         
         self.E1_p = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
         self.E2_p = nn.Parameter(torch.empty(k, edge_d))
@@ -194,7 +200,7 @@ class DynamicNet(nn.Module):
 
         self.mfstgcn = Mfstgcn(feature_dim, tem_kernel, d, 2)
         
-        self.qos_net = PreLayer(emb_dim * 4 * 2 + feature_dim, [64, 32, 16, 8, 4, 1])
+        self.qos_net = PreLayer(tra_hidden + emb_dim * 4 * 2 + feature_dim, [64, 32, 16, 8, 4, 1])
 
 
     def forward(self, srv_attr, svc_attr, edge, load, svc_tot, tra, info):
@@ -204,21 +210,26 @@ class DynamicNet(nn.Module):
         :param edge: k * N_e * 11 [lat, lon, radius,...(8)]
         :param load: k * N_e * 3
         :param svc_tot: k * N_e * 3
-        :param tra: b * k * 4 [lat, lon, speed, direction]
+        :param tra: k * N_u * 4 [uid, lat, lon, speed, direction]
         :param info: b * 2 [eid, sid]
         """
 
+        k, n_u = tra.shape[0], tra.shape[1]
+        usr_emb = self.usr_emb(torch.arange(n_u, dtype=torch.int).reshape(-1, 1)) # [N_u, emb_dim]
         srv_emb = self.srv_emb(srv_attr) # [N_e, emb_dim * 4]
         svc_emb = self.svc_emb(svc_attr) # [n_s, emb_dim * 4]
 
-        tra = self.lstm(tra)[:, -1, :] # [b, tra_hidden]
-        edge = self.proj_edge(edge) # [k, n_e, edge_d]
+        tra = torch.concat((usr_emb.unsqueeze(0).expand(k, -1, -1), tra), dim=0)  # [k, N_u, emb_dim + 4]
+        tra = tra.transpose(0, 1)  # [N_u, k, emb_dim + 4]
+        tra = self.lstm(tra)[:, -1, :] # [N_u, tra_hidden]
+        edge_p = self.proj_edge_p(edge) # [k, n_e, edge_d]
+        edge_a = self.proj_edge_a(edge) # [k, n_e, edge_d]
 
-        A_p_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_p, self.E2_p, edge, edge)
+        A_p_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_p, self.E2_p, edge_p, edge_p)
         A_p_pos = F.relu(A_p_tmp)
         A_p = torch.softmax(A_p_pos, dim=-1) # [k, N_e, N_e]
         
-        A_a_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_a, self.E2_a, edge, edge)
+        A_a_tmp = torch.einsum('ouv,to,tiu,tjv->tij', self.E1_a, self.E2_a, edge_a, edge_a)
         A_a_pos = F.relu(A_a_tmp)
         A_a = torch.softmax(A_a_pos, dim=-1) # [k, N_e, N_e]
 
@@ -234,11 +245,13 @@ class DynamicNet(nn.Module):
 
         srv_fea = torch.mean(srv_fea, dim=1).squeeze(0) # [N_e, feature_dim]
 
-        srv_fea = torch.concat((srv_fea[info[:, 0]], srv_emb[info[:, 0]]), dim=0) # [b, feature_dim + emb_dim * 4]
+        srv_fea = torch.concat((srv_fea[info[:, 0]], srv_emb[info[:, 1]]), dim=0) # [b, feature_dim + emb_dim * 4]
 
-        svc_fea = svc_emb[info[:, 1]] # [b, emb_dim * 4]
+        svc_fea = svc_emb[info[:, 2]] # [b, emb_dim * 4]
 
-        qos = self.qos_net(torch.concat((tra, srv_fea, svc_fea), dim=0))
+        tra_fea = tra[info[:, 0]]  # [b, tra_hidden]
+
+        qos = self.qos_net(torch.concat((tra_fea, srv_fea, svc_fea), dim=0))
 
         return qos
         
@@ -258,7 +271,9 @@ class Dynamic:
             True
         )
         self.srv, self.svc = self.dataset.get_ext_data()
-
+        srv_attr = torch.from_numpy(
+            server_df[['eid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
+        svc_attr = torch.from_numpy(service_df[['sid', 'computing', 'storage', 'bandwidth']].values.astype(np.int32))
     def train_one_epoch(self):
         pass
 
