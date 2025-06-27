@@ -416,7 +416,10 @@ if __name__ == '__main__':
     load_df = pd.read_csv(get_path('load.csv'))
     server_df = pd.read_csv(get_path('server.csv'))
     service_df = pd.read_csv(get_path('service.csv'))
-    inv_df = pd.read_csv(get_path('invocation.csv'))
+    if isinstance(MODEL_MAP[model_type], Dynamic):
+        inv_df = pd.read_csv(get_path('enhance_invocation.csv'))
+    else:
+        inv_df = pd.read_csv(get_path('invocation.csv'))
 
     max_time = math.floor(load_df['timestamp'].max() * scale)
 
