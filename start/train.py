@@ -416,7 +416,7 @@ if __name__ == '__main__':
     load_df = pd.read_csv(get_path('load.csv'))
     server_df = pd.read_csv(get_path('server.csv'))
     service_df = pd.read_csv(get_path('service.csv'))
-    if isinstance(MODEL_MAP[model_type], Dynamic):
+    if model_type == "DYNAMIC":
         inv_df = pd.read_csv(get_path('enhance_invocation.csv'))
     else:
         inv_df = pd.read_csv(get_path('invocation.csv'))
