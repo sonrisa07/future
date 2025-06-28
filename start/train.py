@@ -475,7 +475,9 @@ if __name__ == '__main__':
 
     print_log(f"Loss: {criterion._get_name()}", log=log)
     print_log(log=log)
-    edge_index = torch.LongTensor(pac.edge_index).to(device)
+    edge_index = None
+    if model_type != "DYNAMIC":
+        edge_index = torch.LongTensor(pac.edge_index).to(device)
     model = train(
         model,
         train_loader,

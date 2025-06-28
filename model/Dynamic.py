@@ -150,13 +150,13 @@ class MyDataset(Dataset):
             for uid, eid, sid, rt in inv_d[en]:
                 temp_i.append(np.array([uid, eid, sid], dtype=np.int32))
                 temp_r.append(rt)
-            self.end_d_info[st] = torch.from_numpy(np.stack(temp_i, axis=0))
-            self.end_d_rt[st] = torch.from_numpy(np.stack(temp_r, axis=0))
+            self.end_d_info[st] = torch.from_numpy(np.stack(temp_i, axis=0, dtype=np.int32))
+            self.end_d_rt[st] = torch.from_numpy(np.stack(temp_r, axis=0, dtype=np.float32))
 
-        self.edge_tensor = torch.from_numpy(np.stack(self.edge_tensor, axis=0))
-        self.load_tensor = torch.from_numpy(np.stack(self.load_tensor, axis=0))
-        self.tra_tensor = torch.from_numpy(np.stack(self.tra_tensor, axis=0))
-        self.svc_tot_tensor = torch.from_numpy(np.stack(self.svc_tot_tensor, axis=0))
+        self.edge_tensor = torch.from_numpy(np.stack(self.edge_tensor, axis=0, dtype=np.float32))
+        self.load_tensor = torch.from_numpy(np.stack(self.load_tensor, axis=0, dtype=np.float32))
+        self.tra_tensor = torch.from_numpy(np.stack(self.tra_tensor, axis=0, dtype=np.float32))
+        self.svc_tot_tensor = torch.from_numpy(np.stack(self.svc_tot_tensor, axis=0, dtype=np.float32))
 
         print(self.tra_tensor.shape)  # [frame, k, N_u, 4]
         print(self.edge_tensor.shape)  # [frame, k, N_e, 11]
@@ -216,21 +216,33 @@ class DynamicNet(nn.Module):
 
     def forward(self, edge, load, svc_tot, tra, info):
         """
-        :param edge: k * N_e * 11 [lat, lon, radius,...(8)]
-        :param load: k * N_e * 3
-        :param svc_tot: k * N_e * 3
-        :param tra: k * N_u * 4 [uid, lat, lon, speed, direction]
-        :param info: b * 2 [eid, sid]
+        :param edge: B * k * N_e * 11 [lat, lon, radius,...(8)]
+        :param load: B * k * N_e * 3
+        :param svc_tot: B * k * N_e * 3
+        :param tra: B * k * N_u * 4 [uid, lat, lon, speed, direction]
+        :param info: B * b * 2 [eid, sid]
         """
 
+        edge = edge.squeeze(0)
+        load = load.squeeze(0)
+        svc_tot = svc_tot.squeeze(0)
+        tra = tra.squeeze(0)
+        info = info.squeeze(0)
+        print(edge.shape)
+        print(load.shape)
+        print(svc_tot.shape)
+        print(tra.shape)
+        print(info.shape)
+
         k, n_u = tra.shape[0], tra.shape[1]
-        usr_emb = self.usr_emb(torch.arange(n_u, dtype=torch.int).reshape(-1, 1))  # [N_u, emb_dim]
+        usr_emb = self.usr_emb(torch.arange(n_u, dtype=torch.int, device=tra.device).reshape(-1, 1))  # [N_u, emb_dim]
         srv_emb = self.srv_emb(self.srv_attr)  # [N_e, emb_dim * 4]
         svc_emb = self.svc_emb(self.svc_attr)  # [n_s, emb_dim * 4]
 
-        tra = torch.concat((usr_emb.unsqueeze(0).expand(k, -1, -1), tra), dim=0)  # [k, N_u, emb_dim + 4]
+        tra = torch.concat((usr_emb.unsqueeze(0).expand(k, -1, -1), tra), dim=-1)  # [k, N_u, emb_dim + 4]
         tra = tra.transpose(0, 1)  # [N_u, k, emb_dim + 4]
-        tra = self.lstm(tra)[:, -1, :]  # [N_u, tra_hidden]
+        tra, _ = self.lstm(tra)
+        tra = tra[:, -1, :]  # [N_u, tra_hidden]
         edge_p = self.proj_edge_p(edge)  # [k, n_e, edge_d]
         edge_a = self.proj_edge_a(edge)  # [k, n_e, edge_d]
 
@@ -254,15 +266,21 @@ class DynamicNet(nn.Module):
 
         srv_fea = torch.mean(srv_fea, dim=1).squeeze(0)  # [N_e, feature_dim]
 
-        srv_fea = torch.concat((srv_fea[info[:, 0]], srv_emb[info[:, 1]]), dim=0)  # [b, feature_dim + emb_dim * 4]
+        srv_fea = torch.concat((srv_fea[info[:, 0]], srv_emb[info[:, 1]]), dim=-1)  # [b, feature_dim + emb_dim * 4]
 
         svc_fea = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
 
         tra_fea = tra[info[:, 0]]  # [b, tra_hidden]
 
-        qos = self.qos_net(torch.concat((tra_fea, srv_fea, svc_fea), dim=0))
+        qos = self.qos_net(torch.concat((tra_fea, srv_fea, svc_fea), dim=-1))
 
         return qos
+
+    def to(self, device):
+        super(DynamicNet, self).to(device)
+        self.srv_attr = self.srv_attr.to(device)
+        self.svc_attr = self.svc_attr.to(device)
+        return self
 
 
 class Dynamic:
@@ -284,8 +302,8 @@ class Dynamic:
             service_df["sid"].nunique(),
             srv_attr,
             svc_attr,
-            6,
-            4,
+            7,
+            5,
             k
         )
 

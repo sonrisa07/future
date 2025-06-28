@@ -27,6 +27,9 @@ class DiffConv(nn.Module):
         out = torch.zeros((b, k, n, out_dim), device=H.device)
 
         for t in range(k):
+            print(A.shape)
+            print(H.shape)
+            print(t)
             A_t = A[t]
             H_t = H[:, t, :, :]
 
