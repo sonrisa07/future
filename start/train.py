@@ -169,8 +169,9 @@ def predict(model, loader, edge_index, pac):
             out.append(out_batch)
             y.append(qos)
 
-    out = np.vstack(out).squeeze()
-    y = np.vstack(y).squeeze()
+    max_len = max(max(len(a) for a in out), max(len(b) for b in y))
+    out = np.vstack([np.pad(a, (0, max_len - len(a)), constant_values=0) for a in out])
+    y = np.vstack([np.pad(b, (0, max_len - len(b)), constant_values=0) for b in y])
 
     return y, out
 
