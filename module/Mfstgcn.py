@@ -9,7 +9,8 @@ class Mfstgcn(nn.Module):
         super(Mfstgcn, self).__init__()
         self.net_p = nn.ModuleList()
         self.net_a = nn.ModuleList()
-        self.prop = nn.Linear(feature_dim, feature_dim)
+        self.prop = nn.Linear(feature_dim, feature_dim, bias=False)
+        nn.init.xavier_uniform_(self.prop.weight)
         self.depth = len(d)
         for i in range(self.depth):
             self.net_p.append(STBlock(tem_kernel, d[i], feature_dim, K))

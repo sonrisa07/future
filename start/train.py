@@ -324,6 +324,7 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, criterion, edge_i
             batch_loss_list.append(loss.detach().item())
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(pac.net.parameters(), pac.net.clip)
             optimizer.step()
     else:
         pass

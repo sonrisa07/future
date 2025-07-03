@@ -215,7 +215,7 @@ class DynamicNet(nn.Module):
         tra_hidden=16,
         feature_dim=32,
         tem_kernel=3,
-        d=[1, 2, 2, 1],
+        d=[1, 2, 1, 2],
     ):
         super(DynamicNet, self).__init__()
 
@@ -231,19 +231,13 @@ class DynamicNet(nn.Module):
         )
         self.lstm = nn.LSTM(emb_dim + 4, tra_hidden, batch_first=True)
 
-        self.E1_p = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
-        self.E2_p = nn.Parameter(torch.empty(k, edge_d))
+        self.E1_p = nn.Parameter(nn.init.xavier_uniform_(torch.empty(edge_d, edge_d, edge_d)))
+        self.E2_p = nn.Parameter(nn.init.normal_(torch.empty(k, edge_d), 0., 0.01))
         self.proj_edge_p = nn.Linear(11, edge_d)
 
-        nn.init.xavier_uniform_(self.E1_p)
-        nn.init.normal_(self.E2_p, mean=0, std=0.01)
-
-        self.E1_a = nn.Parameter(torch.empty(edge_d, edge_d, edge_d))
-        self.E2_a = nn.Parameter(torch.empty(k, edge_d))
+        self.E1_a = nn.Parameter(nn.init.xavier_uniform_(torch.empty(edge_d, edge_d, edge_d)))
+        self.E2_a = nn.Parameter(nn.init.normal_(torch.empty(k, edge_d), 0., 0.01))
         self.proj_edge_a = nn.Linear(11, edge_d)
-
-        nn.init.xavier_uniform_(self.E1_a)
-        nn.init.normal_(self.E2_a, mean=0, std=0.01)
 
         self.proj_p = nn.Linear(3, feature_dim)
         self.proj_a = nn.Linear(3, feature_dim)
@@ -253,6 +247,8 @@ class DynamicNet(nn.Module):
         self.qos_net = PreLayer(
             tra_hidden + emb_dim * 4 * 2 + feature_dim, [64, 32, 16, 8, 4, 1]
         )
+
+        self.clip = 5.0
 
     def forward(self, edge, load, svc_tot, tra, info):
         """

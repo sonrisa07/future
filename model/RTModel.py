@@ -12,7 +12,7 @@ from sklearn.cluster import HDBSCAN
 from sklearn.metrics.pairwise import haversine_distances
 from torch import nn
 from torch.nn import LSTM
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from torch_geometric_temporal import STConv
 from tqdm import tqdm
 
@@ -307,7 +307,13 @@ class Nut:
         train_size = int(split * train_valid_size)
         valid_size = train_valid_size - train_size
 
-        train_dataset, valid_dataset, test_dataset = random_split(self.dataset, [train_size, valid_size, test_size])
+        train_dataset = Subset(self.dataset, list(range(0, train_size)))
+        valid_dataset = Subset(
+            self.dataset, list(range(train_size, train_size + valid_size))
+        )
+        test_dataset = Subset(
+            self.dataset, list(range(train_size + valid_size, data_size))
+        )
 
         train_dataset = sort_dataset(train_dataset, self.dataset, 0, 3)
         valid_dataset = sort_dataset(valid_dataset, self.dataset, 0, 3)

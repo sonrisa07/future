@@ -248,8 +248,12 @@ class STGCN(STModel):
         train_size = int(split * train_valid_size)
         valid_size = train_valid_size - train_size
 
-        train_dataset, valid_dataset, test_dataset = random_split(
-            self.dataset, [train_size, valid_size, test_size]
+        train_dataset = Subset(self.dataset, list(range(0, train_size)))
+        valid_dataset = Subset(
+            self.dataset, list(range(train_size, train_size + valid_size))
+        )
+        test_dataset = Subset(
+            self.dataset, list(range(train_size + valid_size, data_size))
         )
 
         train_dataset = sort_dataset(train_dataset, self.dataset, 1, 3)

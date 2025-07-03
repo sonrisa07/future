@@ -24,8 +24,7 @@ class DiffConv(nn.Module):
         b, k, n, d = H.shape
         out_dim = self.weight_forward[0].shape[1]
 
-        out = torch.zeros((b, k, n, out_dim), device=H.device)
-
+        out = H.new_zeros(b, k, n, out_dim, device=H.device)
         for t in range(k):
             A_t = A[t]
             H_t = H[:, t, :, :]
