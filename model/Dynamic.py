@@ -14,47 +14,6 @@ from utils import convert_percentage_to_decimal, get_path, sort_dataset
 import torch.nn as nn
 import torch.nn.functional as F
 
-
-class ChunkedDataset(Dataset):
-    def __init__(self, base_dataset, chunk_size=1024, drop_last=False):
-        """
-        base_dataset: 原始的 Subset(self.dataset,…)
-        chunk_size: 每段的最大长度
-        drop_last: 是否丢弃最后那个长度 < chunk_size 的段
-        """
-        self.base = base_dataset
-        self.chunk_size = chunk_size
-        self.drop_last = drop_last
-        self.index_map = []  # list of (orig_idx, start, end)
-
-        # 预先遍历一遍所有样本，记录每个可切片的位置
-        for i in range(len(self.base)):
-            sample = self.base[i]
-            # 如果是 [1, T, …]，先 squeeze 掉第一维
-            if sample.dim() > 1 and sample.size(0) == 1:
-                sample = sample.squeeze(0)
-            L = sample.size(0)
-            num_full = L // chunk_size
-            # 每个完整段
-            for k in range(num_full):
-                self.index_map.append((i, k * chunk_size, (k + 1) * chunk_size))
-            # 剩余那一段
-            rem = L - num_full * chunk_size
-            if rem and not drop_last:
-                self.index_map.append((i, num_full * chunk_size, L))
-
-    def __len__(self):
-        return len(self.index_map)
-
-    def __getitem__(self, idx):
-        orig_idx, s, e = self.index_map[idx]
-        sample = self.base[orig_idx]
-        # 再次 squeeze 确保 shape 对齐
-        if sample.dim() > 1 and sample.size(0) == 1:
-            sample = sample.squeeze(0)
-        return sample[s:e]
-
-
 class MyDataset(Dataset):
     def __init__(
             self,
@@ -67,12 +26,12 @@ class MyDataset(Dataset):
     ):
         inv_df.sort_values(by=["timestamp", "eid"], inplace=True)
         inv_d = {}
-        inv_np = inv_df[["timestamp", "uid", "eid", "sid", "rt"]].to_numpy()
+        inv_np = inv_df[["uid", "eid", "sid", "rt", "timestamp"]].to_numpy()
         for i in range(len(inv_np)):
             t = inv_np[i][0].item()
             if t not in inv_d:
                 inv_d[t] = []
-            inv_d[t].append(tuple(inv_np[i][1:]))
+            inv_d[t].append(tuple(inv_np[i]))
 
         dynamic_features = (
             inv_df.drop_duplicates(["timestamp", "eid", "uid"], inplace=False)
@@ -195,8 +154,8 @@ class MyDataset(Dataset):
             self.svc_tot_tensor.append(svc_tot_np[st: st + k])
             temp_i = []
             temp_r = []
-            for uid, eid, sid, rt in inv_d[en]:
-                temp_i.append(np.array([uid, eid, sid], dtype=np.int32))
+            for uid, eid, sid, rt, tim in inv_d[en]:
+                temp_i.append(np.array([uid, eid, sid, tim], dtype=np.int32))
                 temp_r.append(rt)
             self.end_d_info[st] = torch.from_numpy(
                 np.stack(temp_i, axis=0, dtype=np.int32)
@@ -225,14 +184,54 @@ class MyDataset(Dataset):
         print(len(self.end_d_info))
         print(len(self.end_d_rt))
 
+        self.tra_tensor_chunk = []
+        self.edge_tensor_chunk = []
+        self.load_tensor_chunk = []
+        self.svc_tot_tensor_chunk = []
+        self.end_info_chunk = []
+        self.end_d_rt_chunk = []
+        batch_size = 1024
+        for t in range(self.tra_tensor.shape[0]):
+            seq_k = self.end_d_info[t].shape[0] // batch_size
+            for i in range(seq_k):
+                self.tra_tensor_chunk.append(self.tra_tensor[t])
+                self.edge_tensor_chunk.append(self.edge_tensor[t])
+                self.load_tensor_chunk.append(self.load_tensor[t])
+                self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
+                self.end_info_chunk.append(self.end_d_info[t][i * batch_size : (i + 1) * batch_size])
+                self.end_d_rt_chunk.append(self.end_d_rt[t][i * batch_size : (i + 1) * batch_size])
+            rem = self.end_d_info[t].shape[0] - seq_k * batch_size
+            if rem > 0:
+                self.tra_tensor_chunk.append(self.tra_tensor[t])
+                self.edge_tensor_chunk.append(self.edge_tensor[t])
+                self.load_tensor_chunk.append(self.load_tensor[t])
+                self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
+                self.end_info_chunk.append(self.end_d_info[t][seq_k * batch_size : self.end_d_info[t].shape[0]])
+                self.end_d_rt_chunk.append(self.end_d_rt[t][seq_k * batch_size : self.end_d_info[t].shape[0]])
+        
+        self.tra_tensor = torch.stack(self.tra_tensor_chunk, dim=0)
+        self.edge_tensor = torch.stack(self.edge_tensor_chunk, dim=0)
+        self.load_tensor = torch.stack(self.load_tensor_chunk, dim=0)
+        self.svc_tot_tensor = torch.stack(self.svc_tot_tensor_chunk, dim=0)
+        self.end_info_tensor = torch.stack(self.end_info_chunk, dim=0)
+        self.end_d_rt_tensor = torch.stack(self.end_d_rt_chunk, dim=0)
+
+        print(self.tra_tensor.shape)  # [N, k, N_u, 4]
+        print(self.edge_tensor.shape)  # [N, k, N_e, 11]
+        print(self.load_tensor.shape)  # [N, k, N_e, 3]
+        print(self.svc_tot_tensor.shape)  # [N, k, n_e, 3]
+        print(self.end_info_tensor.shape)  # [N, 4]
+        print(self.end_d_rt_tensor.shape)  # [N, 1]
+
+
     def __getitem__(self, idx):
         return (
             self.tra_tensor[idx],  # [k, N_u, 4]
             self.edge_tensor[idx],  # [k, N_e, 11]
             self.load_tensor[idx],  # [k, N_e, 3]
             self.svc_tot_tensor[idx],  # [k, N_e, 3]
-            self.end_d_info[idx],  # [b, 3]
-            self.end_d_rt[idx],  # [b, 1]
+            self.end_info_tensor[idx],  # [b, 4]
+            self.end_d_rt_tensor[idx],  # [b, 1]
         )
 
     def __len__(self):
@@ -387,31 +386,32 @@ class Dynamic:
             5,
             k,
         )
+        
+        self.t_boundary = inv_df["timestamp"].max() + 1
 
     def get_dataloaders(self, scope, split):
-        data_size = len(self.dataset)
-        train_valid_size = int(scope * data_size)
+        train_valid_tim = int(scope * self.t_boundary)
+        train_tim = int(split * train_valid_tim)
 
-        train_size = int(split * train_valid_size)
-        valid_size = train_valid_size - train_size
+        train_idx = []
+        valid_idx = []
+        test_idx = []
 
-        train_dataset = Subset(self.dataset, list(range(0, train_size)))
-        valid_dataset = Subset(
-            self.dataset, list(range(train_size, train_size + valid_size))
-        )
-        test_dataset = Subset(
-            self.dataset, list(range(train_size + valid_size, data_size))
-        )
+        for idx in range(len(self.dataset)):
+            if (int(self.dataset[idx][4][-1]) < train_tim):
+                train_idx.append(idx)
+            elif (train_tim <= int(self.dataset[idx][4][-1]) < train_valid_tim):
+                valid_idx.append(idx)
+            else:
+                test_idx.append(idx)
 
+        print(train_tim, train_valid_tim, self.t_boundary)
+        train_dataset = Subset(self.dataset, train_idx)
+        valid_dataset = Subset(self.dataset, valid_idx)
+        test_dataset = Subset(self.dataset, test_idx)
         print("train_dataset size: {}".format(len(train_dataset)))
         print("valid_dataset size: {}".format(len(valid_dataset)))
         print("test_dataset size: {}".format(len(test_dataset)))
-        train_seg = ChunkedDataset(train_dataset, 256, False)
-        valid_seg = ChunkedDataset(valid_dataset, 256, False)
-        test_seg = ChunkedDataset(test_dataset, 256, False)
-        print("train_dataset size: {}".format(len(train_seg)))
-        print("valid_dataset size: {}".format(len(valid_seg)))
-        print("test_dataset size: {}".format(len(test_seg)))
         train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
         valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
