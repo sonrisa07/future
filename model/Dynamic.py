@@ -15,15 +15,55 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class ChunkedDataset(Dataset):
+    def __init__(self, base_dataset, chunk_size=1024, drop_last=False):
+        """
+        base_dataset: 原始的 Subset(self.dataset,…)
+        chunk_size: 每段的最大长度
+        drop_last: 是否丢弃最后那个长度 < chunk_size 的段
+        """
+        self.base = base_dataset
+        self.chunk_size = chunk_size
+        self.drop_last = drop_last
+        self.index_map = []  # list of (orig_idx, start, end)
+
+        # 预先遍历一遍所有样本，记录每个可切片的位置
+        for i in range(len(self.base)):
+            sample = self.base[i]
+            # 如果是 [1, T, …]，先 squeeze 掉第一维
+            if sample.dim() > 1 and sample.size(0) == 1:
+                sample = sample.squeeze(0)
+            L = sample.size(0)
+            num_full = L // chunk_size
+            # 每个完整段
+            for k in range(num_full):
+                self.index_map.append((i, k * chunk_size, (k + 1) * chunk_size))
+            # 剩余那一段
+            rem = L - num_full * chunk_size
+            if rem and not drop_last:
+                self.index_map.append((i, num_full * chunk_size, L))
+
+    def __len__(self):
+        return len(self.index_map)
+
+    def __getitem__(self, idx):
+        orig_idx, s, e = self.index_map[idx]
+        sample = self.base[orig_idx]
+        # 再次 squeeze 确保 shape 对齐
+        if sample.dim() > 1 and sample.size(0) == 1:
+            sample = sample.squeeze(0)
+        return sample[s:e]
+
+
 class MyDataset(Dataset):
     def __init__(
-        self,
-        user_df: pd.DataFrame,
-        server_df: pd.DataFrame,
-        load_df: pd.DataFrame,
-        service_df: pd.DataFrame,
-        inv_df: pd.DataFrame,
-        k: int,
+            self,
+            user_df: pd.DataFrame,
+            server_df: pd.DataFrame,
+            load_df: pd.DataFrame,
+            service_df: pd.DataFrame,
+            inv_df: pd.DataFrame,
+            k: int,
     ):
         inv_df.sort_values(by=["timestamp", "eid"], inplace=True)
         inv_d = {}
@@ -149,10 +189,10 @@ class MyDataset(Dataset):
         self.svc_tot_tensor = []
         for st in track(range(t_len - k)):
             en = st + k
-            self.edge_tensor.append(eh_srv_np[st : st + k])
-            self.load_tensor.append(load_np[st : st + k])
-            self.tra_tensor.append(tra_np[st : st + k])
-            self.svc_tot_tensor.append(svc_tot_np[st : st + k])
+            self.edge_tensor.append(eh_srv_np[st: st + k])
+            self.load_tensor.append(load_np[st: st + k])
+            self.tra_tensor.append(tra_np[st: st + k])
+            self.svc_tot_tensor.append(svc_tot_np[st: st + k])
             temp_i = []
             temp_r = []
             for uid, eid, sid, rt in inv_d[en]:
@@ -201,21 +241,21 @@ class MyDataset(Dataset):
 
 class DynamicNet(nn.Module):
     def __init__(
-        self,
-        n_user,
-        n_server,
-        n_service,
-        srv_attr,
-        svc_attr,
-        srv_level,
-        svc_level,
-        k,
-        emb_dim=8,
-        edge_d=8,
-        tra_hidden=16,
-        feature_dim=32,
-        tem_kernel=3,
-        d=[1, 2, 1, 2],
+            self,
+            n_user,
+            n_server,
+            n_service,
+            srv_attr,
+            svc_attr,
+            srv_level,
+            svc_level,
+            k,
+            emb_dim=8,
+            edge_d=8,
+            tra_hidden=16,
+            feature_dim=32,
+            tem_kernel=3,
+            d=[1, 2, 1, 2],
     ):
         super(DynamicNet, self).__init__()
 
@@ -366,6 +406,12 @@ class Dynamic:
         print("train_dataset size: {}".format(len(train_dataset)))
         print("valid_dataset size: {}".format(len(valid_dataset)))
         print("test_dataset size: {}".format(len(test_dataset)))
+        train_seg = ChunkedDataset(train_dataset, 256, False)
+        valid_seg = ChunkedDataset(valid_dataset, 256, False)
+        test_seg = ChunkedDataset(test_dataset, 256, False)
+        print("train_dataset size: {}".format(len(train_seg)))
+        print("valid_dataset size: {}".format(len(valid_seg)))
+        print("test_dataset size: {}".format(len(test_seg)))
         train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
         valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
