@@ -1,5 +1,8 @@
 from collections import Counter
 import random
+
+from torch.nn.utils.rnn import pad_sequence
+
 from module.Mfstgcn import Mfstgcn
 from module.PreLayer import PreLayer
 from rich.progress import track
@@ -13,6 +16,7 @@ from model.layers import AutoEmbedding
 from utils import convert_percentage_to_decimal, get_path, sort_dataset
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class MyDataset(Dataset):
     def __init__(
@@ -28,7 +32,7 @@ class MyDataset(Dataset):
         inv_d = {}
         inv_np = inv_df[["uid", "eid", "sid", "rt", "timestamp"]].to_numpy()
         for i in range(len(inv_np)):
-            t = inv_np[i][0].item()
+            t = inv_np[i][-1].item()
             if t not in inv_d:
                 inv_d[t] = []
             inv_d[t].append(tuple(inv_np[i]))
@@ -181,8 +185,8 @@ class MyDataset(Dataset):
         print(self.edge_tensor.shape)  # [frame, k, N_e, 11]
         print(self.load_tensor.shape)  # [frame, k, N_e, 3]
         print(self.svc_tot_tensor.shape)  # [frame, k, n_e, 3]
-        print(len(self.end_d_info))
-        print(len(self.end_d_rt))
+        print(len(self.end_d_info))  # [frame, n, 4]
+        print(len(self.end_d_rt))  # [frame, n, 1]
 
         self.tra_tensor_chunk = []
         self.edge_tensor_chunk = []
@@ -190,39 +194,47 @@ class MyDataset(Dataset):
         self.svc_tot_tensor_chunk = []
         self.end_info_chunk = []
         self.end_d_rt_chunk = []
-        batch_size = 1024
+        batch_size = 256
         for t in range(self.tra_tensor.shape[0]):
             seq_k = self.end_d_info[t].shape[0] // batch_size
+            tim = self.end_d_info[t][0][-1]
             for i in range(seq_k):
                 self.tra_tensor_chunk.append(self.tra_tensor[t])
                 self.edge_tensor_chunk.append(self.edge_tensor[t])
                 self.load_tensor_chunk.append(self.load_tensor[t])
                 self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
-                self.end_info_chunk.append(self.end_d_info[t][i * batch_size : (i + 1) * batch_size])
-                self.end_d_rt_chunk.append(self.end_d_rt[t][i * batch_size : (i + 1) * batch_size])
+                self.end_info_chunk.append(self.end_d_info[t][i * batch_size: (i + 1) * batch_size])
+                self.end_d_rt_chunk.append(self.end_d_rt[t][i * batch_size: (i + 1) * batch_size])
             rem = self.end_d_info[t].shape[0] - seq_k * batch_size
             if rem > 0:
                 self.tra_tensor_chunk.append(self.tra_tensor[t])
                 self.edge_tensor_chunk.append(self.edge_tensor[t])
                 self.load_tensor_chunk.append(self.load_tensor[t])
                 self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
-                self.end_info_chunk.append(self.end_d_info[t][seq_k * batch_size : self.end_d_info[t].shape[0]])
-                self.end_d_rt_chunk.append(self.end_d_rt[t][seq_k * batch_size : self.end_d_info[t].shape[0]])
-        
+                self.end_info_chunk.append(self.end_d_info[t][seq_k * batch_size: self.end_d_info[t].shape[0]])
+                self.end_d_rt_chunk.append(self.end_d_rt[t][seq_k * batch_size: self.end_d_info[t].shape[0]])
+
         self.tra_tensor = torch.stack(self.tra_tensor_chunk, dim=0)
         self.edge_tensor = torch.stack(self.edge_tensor_chunk, dim=0)
         self.load_tensor = torch.stack(self.load_tensor_chunk, dim=0)
         self.svc_tot_tensor = torch.stack(self.svc_tot_tensor_chunk, dim=0)
-        self.end_info_tensor = torch.stack(self.end_info_chunk, dim=0)
-        self.end_d_rt_tensor = torch.stack(self.end_d_rt_chunk, dim=0)
+        self.end_info_tensor = pad_sequence(
+            self.end_info_chunk,
+            batch_first=True,
+            padding_value=0,
+        )
+        self.end_d_rt_tensor = pad_sequence(
+            self.end_d_rt_chunk,
+            batch_first=True,
+            padding_value=0,
+        )
 
         print(self.tra_tensor.shape)  # [N, k, N_u, 4]
         print(self.edge_tensor.shape)  # [N, k, N_e, 11]
         print(self.load_tensor.shape)  # [N, k, N_e, 3]
         print(self.svc_tot_tensor.shape)  # [N, k, n_e, 3]
-        print(self.end_info_tensor.shape)  # [N, 4]
-        print(self.end_d_rt_tensor.shape)  # [N, 1]
-
+        print(self.end_info_tensor.shape)  # [N, b, 4]
+        print(self.end_d_rt_tensor.shape)  # [N, b, 1]
 
     def __getitem__(self, idx):
         return (
@@ -386,7 +398,7 @@ class Dynamic:
             5,
             k,
         )
-        
+
         self.t_boundary = inv_df["timestamp"].max() + 1
 
     def get_dataloaders(self, scope, split):
@@ -397,10 +409,11 @@ class Dynamic:
         valid_idx = []
         test_idx = []
 
-        for idx in range(len(self.dataset)):
-            if (int(self.dataset[idx][4][-1]) < train_tim):
+        for idx in track(range(len(self.dataset))):
+            t = int(self.dataset[idx][-2][0][-1])
+            if t < train_tim:
                 train_idx.append(idx)
-            elif (train_tim <= int(self.dataset[idx][4][-1]) < train_valid_tim):
+            elif train_tim <= t < train_valid_tim:
                 valid_idx.append(idx)
             else:
                 test_idx.append(idx)
