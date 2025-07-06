@@ -343,10 +343,6 @@ def predict(model, loader, edge_index, pac):
             out.append(out_batch)
             y.append(qos)
 
-    for i in range(len(out)):
-        print(out[i].shape)
-        print(y[i].shape)
-
     out = np.vstack(out).squeeze()
     y = np.vstack(y).squeeze()
 
