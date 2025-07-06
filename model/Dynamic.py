@@ -266,10 +266,12 @@ class DynamicNet(nn.Module):
             tra_hidden=16,
             feature_dim=32,
             tem_kernel=3,
-            d=[1, 2, 1, 2],
+            d=None,
     ):
         super(DynamicNet, self).__init__()
 
+        if d is None:
+            d = [1, 2, 1, 2]
         self.srv_attr = srv_attr
         self.svc_attr = svc_attr
 
@@ -307,7 +309,7 @@ class DynamicNet(nn.Module):
         :param load: B * k * N_e * 3
         :param svc_tot: B * k * N_e * 3
         :param tra: B * k * N_u * 4 [uid, lat, lon, speed, direction]
-        :param info: B * b * 2 [eid, sid]
+        :param info: B * b * 2 [uid, eid, sid, tim]
         """
 
         edge = edge.squeeze(0)
@@ -357,7 +359,7 @@ class DynamicNet(nn.Module):
         srv_fea = torch.mean(srv_fea, dim=1).squeeze(0)  # [N_e, feature_dim]
 
         srv_fea = torch.concat(
-            (srv_fea[info[:, 0]], srv_emb[info[:, 1]]), dim=-1
+            (srv_fea[info[:, 1]], srv_emb[info[:, 1]]), dim=-1
         )  # [b, feature_dim + emb_dim * 4]
 
         svc_fea = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
