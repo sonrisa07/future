@@ -188,62 +188,14 @@ class MyDataset(Dataset):
         print(len(self.end_d_info))  # [frame, n, 4]
         print(len(self.end_d_rt))  # [frame, n, 1]
 
-        self.tra_tensor_chunk = []
-        self.edge_tensor_chunk = []
-        self.load_tensor_chunk = []
-        self.svc_tot_tensor_chunk = []
-        self.end_info_chunk = []
-        self.end_d_rt_chunk = []
-        batch_size = 256
-        for t in range(self.tra_tensor.shape[0]):
-            seq_k = self.end_d_info[t].shape[0] // batch_size
-            tim = self.end_d_info[t][0][-1]
-            for i in range(seq_k):
-                self.tra_tensor_chunk.append(self.tra_tensor[t])
-                self.edge_tensor_chunk.append(self.edge_tensor[t])
-                self.load_tensor_chunk.append(self.load_tensor[t])
-                self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
-                self.end_info_chunk.append(self.end_d_info[t][i * batch_size: (i + 1) * batch_size])
-                self.end_d_rt_chunk.append(self.end_d_rt[t][i * batch_size: (i + 1) * batch_size])
-            rem = self.end_d_info[t].shape[0] - seq_k * batch_size
-            if rem > 0:
-                self.tra_tensor_chunk.append(self.tra_tensor[t])
-                self.edge_tensor_chunk.append(self.edge_tensor[t])
-                self.load_tensor_chunk.append(self.load_tensor[t])
-                self.svc_tot_tensor_chunk.append(self.svc_tot_tensor[t])
-                self.end_info_chunk.append(self.end_d_info[t][seq_k * batch_size: self.end_d_info[t].shape[0]])
-                self.end_d_rt_chunk.append(self.end_d_rt[t][seq_k * batch_size: self.end_d_info[t].shape[0]])
-
-        self.tra_tensor = torch.stack(self.tra_tensor_chunk, dim=0)
-        self.edge_tensor = torch.stack(self.edge_tensor_chunk, dim=0)
-        self.load_tensor = torch.stack(self.load_tensor_chunk, dim=0)
-        self.svc_tot_tensor = torch.stack(self.svc_tot_tensor_chunk, dim=0)
-        self.end_info_tensor = pad_sequence(
-            self.end_info_chunk,
-            batch_first=True,
-            padding_value=0,
-        )
-        self.end_d_rt_tensor = pad_sequence(
-            self.end_d_rt_chunk,
-            batch_first=True,
-            padding_value=0,
-        )
-
-        print(self.tra_tensor.shape)  # [N, k, N_u, 4]
-        print(self.edge_tensor.shape)  # [N, k, N_e, 11]
-        print(self.load_tensor.shape)  # [N, k, N_e, 3]
-        print(self.svc_tot_tensor.shape)  # [N, k, n_e, 3]
-        print(self.end_info_tensor.shape)  # [N, b, 4]
-        print(self.end_d_rt_tensor.shape)  # [N, b, 1]
-
     def __getitem__(self, idx):
         return (
             self.tra_tensor[idx],  # [k, N_u, 4]
             self.edge_tensor[idx],  # [k, N_e, 11]
             self.load_tensor[idx],  # [k, N_e, 3]
             self.svc_tot_tensor[idx],  # [k, N_e, 3]
-            self.end_info_tensor[idx],  # [b, 4]
-            self.end_d_rt_tensor[idx],  # [b, 1]
+            self.end_d_info[idx],  # [n, 4]
+            self.end_d_rt[idx]  # [n, 1]
         )
 
     def __len__(self):
@@ -266,10 +218,12 @@ class DynamicNet(nn.Module):
             tra_hidden=16,
             feature_dim=32,
             tem_kernel=3,
-            d=[1, 2, 1, 2],
+            d=None,
     ):
         super(DynamicNet, self).__init__()
 
+        if d is None:
+            d = [1, 2, 1, 2]
         self.srv_attr = srv_attr
         self.svc_attr = svc_attr
 
@@ -307,7 +261,7 @@ class DynamicNet(nn.Module):
         :param load: B * k * N_e * 3
         :param svc_tot: B * k * N_e * 3
         :param tra: B * k * N_u * 4 [uid, lat, lon, speed, direction]
-        :param info: B * b * 2 [eid, sid]
+        :param info: B * b * 4 [uid, eid, sid, tim]
         """
 
         edge = edge.squeeze(0)
@@ -357,7 +311,7 @@ class DynamicNet(nn.Module):
         srv_fea = torch.mean(srv_fea, dim=1).squeeze(0)  # [N_e, feature_dim]
 
         srv_fea = torch.concat(
-            (srv_fea[info[:, 0]], srv_emb[info[:, 1]]), dim=-1
+            (srv_fea[info[:, 1]], srv_emb[info[:, 1]]), dim=-1
         )  # [b, feature_dim + emb_dim * 4]
 
         svc_fea = svc_emb[info[:, 2]]  # [b, emb_dim * 4]
