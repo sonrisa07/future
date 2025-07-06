@@ -160,7 +160,7 @@ class MyDataset(Dataset):
             temp_r = []
             for uid, eid, sid, rt, tim in inv_d[en]:
                 temp_i.append(np.array([uid, eid, sid, tim], dtype=np.int32))
-                temp_r.append(rt)
+                temp_r.append(np.array([rt], dtype=np.float32))
             self.end_d_info[st] = torch.from_numpy(
                 np.stack(temp_i, axis=0, dtype=np.int32)
             )
@@ -186,7 +186,9 @@ class MyDataset(Dataset):
         print(self.load_tensor.shape)  # [frame, k, N_e, 3]
         print(self.svc_tot_tensor.shape)  # [frame, k, n_e, 3]
         print(len(self.end_d_info))  # [frame, n, 4]
+        print(self.end_d_info[0].shape)
         print(len(self.end_d_rt))  # [frame, n, 1]
+        print(self.end_d_rt[0].shape)
 
     def __getitem__(self, idx):
         return (
